@@ -1,8 +1,9 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const mongoose = require("mongoose");
 const initRoutes = require("./routes");
+const mongoose = require("mongoose");
+const errorHandler = require("./middlewares/errorHandler");
 
 const app = express();
 
@@ -19,3 +20,5 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Serrver running on port ${PORT}`);
 });
+
+app.use(errorHandler);
