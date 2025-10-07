@@ -2,7 +2,10 @@ const User = require("../models/user");
 const bcrypt = require("bcryptjs");
 const Verification = require("../models/verification");
 const jwt = require("jsonwebtoken");
-const { sendVerificationEmail } = require("../utils/mailer");
+const {
+  sendVerificationEmail,
+  sendResetPasswordCode,
+} = require("../utils/mailer");
 
 const login = async ({ email, password }) => {
   if (!email || !password) {
@@ -123,4 +126,81 @@ const verifyEmail = async ({ email, otp }) => {
   return { message: "User created and verified successfully!" };
 };
 
-module.exports = { login, registerRequest, verifyEmail };
+const forgotPassword = async ({ email }) => {
+  if (!email) {
+    const error = new Error("Email is required");
+    error.status = 400;
+    throw error;
+  }
+  const user = await User.findOne({ email });
+  if (user) {
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    user.resetPasswordCode = code;
+    user.resetPasswordExpires = Date.now() + 1000 * 60 * 10;
+    await user.save();
+    await sendResetPasswordCode(email, code);
+  }
+  return {
+    message:
+      "We have sent a verification code to your email. Please check your inbox.",
+  };
+};
+
+const verifyResetCode = async ({ email, code }) => {
+  if (!email || !code) {
+    const error = new Error("Email and code are required");
+    error.status = 400;
+    throw error;
+  }
+  const user = await User.findOne({ email });
+  if (
+    !user ||
+    user.resetPasswordCode !== code ||
+    !user.resetPasswordExpires ||
+    user.resetPasswordExpires < Date.now()
+  ) {
+    const error = new Error("Invalid or expired code");
+    error.status = 400;
+    throw error;
+  }
+  return { message: "Code verified. You can now reset your password." };
+};
+
+const resetPassword = async ({ email, code, newPassword }) => {
+  if (!email || !code || !newPassword) {
+    const error = new Error("All fields are required");
+    error.status = 400;
+    throw error;
+  }
+  const user = await User.findOne({ email });
+  if (
+    !user ||
+    user.resetPasswordCode !== code ||
+    !user.resetPasswordExpires ||
+    user.resetPasswordExpires < Date.now()
+  ) {
+    const error = new Error("Invalid or expired code");
+    error.status = 400;
+    throw error;
+  }
+  if (newPassword.length < 6) {
+    const error = new Error("Password must be at least 6 characters");
+    error.status = 400;
+    throw error;
+  }
+  const salt = await bcrypt.genSalt(10);
+  user.passwordHash = await bcrypt.hash(newPassword, salt);
+  user.resetPasswordCode = undefined;
+  user.resetPasswordExpires = undefined;
+  await user.save();
+  return { message: "Password reset successfully!" };
+};
+
+module.exports = {
+  login,
+  registerRequest,
+  verifyEmail,
+  forgotPassword,
+  verifyResetCode,
+  resetPassword,
+};

@@ -29,5 +29,26 @@ const sendVerificationEmail = async (toEmail, verificationCode) => {
     throw new Error("Could not send verification email");
   }
 };
+const sendResetPasswordCode = async (toEmail, resetCode) => {
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: toEmail,
+    subject: "Your Password Reset Code for Ticketbox Clone",
+    html: `
+      <h1>Password Reset</h1>
+      <p>You requested to reset your password. Please use the following code to reset your password:</p>
+      <h2><strong>${resetCode}</strong></h2>
+      <p>This code will expire in 10 minutes. If you did not request a password reset, please ignore this email.</p>
+    `,
+  };
 
-module.exports = { sendVerificationEmail };
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log("Reset password email sent successfully to", toEmail);
+  } catch (error) {
+    console.error("Error sending reset password email:", error);
+    throw new Error("Could not send reset password email");
+  }
+};
+
+module.exports = { sendVerificationEmail, sendResetPasswordCode };
