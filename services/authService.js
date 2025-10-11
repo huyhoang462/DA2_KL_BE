@@ -41,8 +41,10 @@ const login = async ({ email, password }) => {
   return {
     token,
     user: {
+      id: user.id,
       email: user.email,
       name: user.name,
+      phone: user.phone,
       role: user.role,
     },
   };
@@ -196,6 +198,40 @@ const resetPassword = async ({ email, code, newPassword }) => {
   return { message: "Password reset successfully!" };
 };
 
+const changePassword = async ({ userId, oldPassword, newPassword }) => {
+  if (!userId || !oldPassword || !newPassword) {
+    const error = new Error("All fields are required");
+    error.status = 400;
+    throw error;
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    const error = new Error("User not found");
+    error.status = 404;
+    throw error;
+  }
+
+  const isMatch = await bcrypt.compare(oldPassword, user.passwordHash);
+  if (!isMatch) {
+    const error = new Error("Old password is incorrect");
+    error.status = 400;
+    throw error;
+  }
+
+  if (newPassword.length < 6) {
+    const error = new Error("New password must be at least 6 characters");
+    error.status = 400;
+    throw error;
+  }
+
+  const salt = await bcrypt.genSalt(10);
+  user.passwordHash = await bcrypt.hash(newPassword, salt);
+  await user.save();
+
+  return { message: "Password changed successfully!" };
+};
+
 module.exports = {
   login,
   registerRequest,
@@ -203,4 +239,5 @@ module.exports = {
   forgotPassword,
   verifyResetCode,
   resetPassword,
+  changePassword,
 };

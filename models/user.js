@@ -20,7 +20,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ["user", "admin"],
+    enum: ["user", "admin", "staff"],
     default: "user",
   },
   resetPasswordCode: String,
@@ -32,7 +32,6 @@ userSchema.set("toJSON", {
     returnedObject.id = returnedObject._id.toString();
     delete returnedObject._id;
     delete returnedObject.__v;
-    // Quan trọng: không bao giờ trả về password hash trong API
     delete returnedObject.passwordHash;
   },
 });

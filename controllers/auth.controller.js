@@ -5,6 +5,7 @@ const {
   forgotPassword,
   verifyResetCode,
   resetPassword,
+  changePassword,
 } = require("../services/authService");
 
 const handleLogin = async (req, res, next) => {
@@ -72,6 +73,15 @@ const handleResetPassword = async (req, res, next) => {
     next(error);
   }
 };
+const handleChangePassword = async (req, res, next) => {
+  try {
+    const { userId, oldPassword, newPassword } = req.body;
+    const result = await changePassword({ userId, oldPassword, newPassword });
+    return res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
 
 module.exports = {
   login: handleLogin,
@@ -80,4 +90,5 @@ module.exports = {
   forgotPassword: handleForgotPassword,
   verifyResetCode: handleVerifyResetCode,
   resetPassword: handleResetPassword,
+  changePassword: handleChangePassword,
 };
