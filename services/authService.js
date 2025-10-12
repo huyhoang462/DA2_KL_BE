@@ -205,6 +205,12 @@ const changePassword = async ({ userId, oldPassword, newPassword }) => {
     throw error;
   }
 
+  if (oldPassword === newPassword) {
+    const error = new Error("New password must be different from old password");
+    error.status = 400;
+    throw error;
+  }
+
   const user = await User.findById(userId);
   if (!user) {
     const error = new Error("User not found");
@@ -232,6 +238,33 @@ const changePassword = async ({ userId, oldPassword, newPassword }) => {
   return { message: "Password changed successfully!" };
 };
 
+const editProfile = async ({ userId, name, phone }) => {
+  if (!userId || !name || !phone) {
+    const error = new Error("All fields are required");
+    error.status = 400;
+    throw error;
+  }
+  const user = await User.findById(userId);
+  if (!user) {
+    const error = new Error("User not found");
+    error.status = 404;
+    throw error;
+  }
+  user.name = name;
+  user.phone = phone;
+  await user.save();
+  return {
+    message: "Profile updated successfully!",
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      phone: user.phone,
+      role: user.role,
+    },
+  };
+};
+
 module.exports = {
   login,
   registerRequest,
@@ -240,4 +273,5 @@ module.exports = {
   verifyResetCode,
   resetPassword,
   changePassword,
+  editProfile,
 };

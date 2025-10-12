@@ -6,6 +6,7 @@ const {
   verifyResetCode,
   resetPassword,
   changePassword,
+  editProfile,
 } = require("../services/authService");
 
 const handleLogin = async (req, res, next) => {
@@ -83,6 +84,16 @@ const handleChangePassword = async (req, res, next) => {
   }
 };
 
+const handleEditProfile = async (req, res, next) => {
+  try {
+    const { userId, name, phone } = req.body;
+    const result = await editProfile({ userId, name, phone });
+    return res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   login: handleLogin,
   register: handleRegisterRequest,
@@ -91,4 +102,5 @@ module.exports = {
   verifyResetCode: handleVerifyResetCode,
   resetPassword: handleResetPassword,
   changePassword: handleChangePassword,
+  editProfile: handleEditProfile,
 };
