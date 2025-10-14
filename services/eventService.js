@@ -160,4 +160,32 @@ const createEvent = async (data) => {
   }
 };
 
-module.exports = { getAllEvents, getEventById, createEvent };
+const deleteEvent = async (eventId) => {
+  if (!eventId) {
+    const error = new Error("Event ID is required");
+    error.status = 400;
+    throw error;
+  }
+  const event = await Event.findById(eventId);
+  if (!event) {
+    const error = new Error("Event not found");
+    error.status = 404;
+    throw error;
+  }
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    await Show.deleteMany({ event: eventId }, { session });
+    await Event.findByIdAndDelete(eventId, { session });
+    await session.commitTransaction();
+    return { message: "Event and associated shows deleted successfully" };
+  } catch (e) {
+    const error = new Error("Deleting event failed, please try again.");
+    console.error("Transaction Error in deleteEvent:", e);
+    error.status = 500;
+    throw error;
+  } finally {
+    session.endSession();
+  }
+};
+module.exports = { getAllEvents, getEventById, createEvent, deleteEvent };

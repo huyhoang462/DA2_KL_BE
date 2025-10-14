@@ -2,6 +2,7 @@ const {
   getAllEvents,
   createEvent,
   getEventById,
+  deleteEvent,
 } = require("../services/eventService");
 
 const handleGetAllEvents = async (req, res, next) => {
@@ -33,4 +34,19 @@ const handleCreateEvent = async (req, res, next) => {
   }
 };
 
-module.exports = { handleGetAllEvents, handleGetEventById, handleCreateEvent };
+const handleDeleteEvent = async (req, res, next) => {
+  try {
+    const eventId = req.params.id;
+    const result = await deleteEvent(eventId);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  handleGetAllEvents,
+  handleGetEventById,
+  handleCreateEvent,
+  handleDeleteEvent,
+};
