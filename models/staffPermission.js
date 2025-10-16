@@ -1,10 +1,12 @@
 const mongoose = require("mongoose");
 
-const showSchema = new mongoose.Schema(
+const staffPermissionSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, trim: true },
-    startTime: { type: Date, required: true },
-    endTime: { type: Date, required: true },
+    staff: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
     event: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Event",
@@ -14,7 +16,9 @@ const showSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-showSchema.set("toJSON", {
+staffPermissionSchema.index({ staff: 1, event: 1 }, { unique: true });
+
+staffPermissionSchema.set("toJSON", {
   transform: (document, returnedObject) => {
     returnedObject.id = returnedObject._id.toString();
     delete returnedObject._id;
@@ -22,4 +26,4 @@ showSchema.set("toJSON", {
   },
 });
 
-module.exports = mongoose.model("Show", showSchema);
+module.exports = mongoose.model("StaffPermission", staffPermissionSchema);

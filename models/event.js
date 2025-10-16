@@ -1,54 +1,66 @@
-// models/event.js
 const mongoose = require("mongoose");
-const category = require("./category");
 
-const eventSchema = new mongoose.Schema({
-  user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-    required: true,
+const eventSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    description: { type: String, required: true },
+    bannerImageUrl: { type: String, required: true },
+    format: {
+      type: String,
+      enum: ["online", "offline"],
+      required: true,
+    },
+    location: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Location",
+    },
+    startDate: { type: Date, required: true },
+    endDate: { type: Date, required: true },
+    organizerInfo: {
+      name: { type: String, required: true },
+      email: { type: String },
+      phone: { type: String },
+      description: { type: String },
+    },
+    creator: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    category: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: [
+        "draft",
+        "pending",
+        "upcoming",
+        "ongoing",
+        "completed",
+        "rejected",
+        "cancelled",
+      ],
+      default: "draft",
+      required: true,
+    },
   },
-  name: {
-    type: String,
-    required: true,
-  },
-  bannerImage: {
-    type: String,
-    required: true,
-  },
-  description: {
-    type: String,
-    required: true,
-  },
-  category: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Category",
-    required: true,
-  },
-  format: {
-    type: String,
-    required: true,
-    enum: ["offline", "online"],
-  },
-  location: {
-    type: String,
-    required: true,
-  },
+  {
+    timestamps: true,
+  }
+);
 
-  startDate: {
-    type: Date,
-    required: true,
-  },
-  endDate: {
-    type: Date,
-    required: true,
-  },
-  organization: {
-    name: { type: String, required: true },
-    email: { type: String, required: true },
-    phone: { type: String, required: true },
-    info: { type: String },
-  },
+// Validation logic: location is required for offline events
+eventSchema.pre("validate", function (next) {
+  if (
+    this.format === "offline" &&
+    (!this.location || this.location.trim() === "")
+  ) {
+    this.invalidate("location", "Location is required for offline events.");
+  }
+  next();
 });
 
 eventSchema.set("toJSON", {

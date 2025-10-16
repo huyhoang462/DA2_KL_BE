@@ -1,31 +1,41 @@
+// models/user.js
 const mongoose = require("mongoose");
 
-const userSchema = new mongoose.Schema({
-  email: {
-    type: String,
-    required: true,
-    unique: true,
+const userSchema = new mongoose.Schema(
+  {
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true, // Luôn lưu email dưới dạng chữ thường
+      trim: true, // Xóa khoảng trắng thừa
+    },
+    passwordHash: {
+      type: String,
+      required: true,
+    },
+    fullName: {
+      type: String,
+      required: true,
+    },
+    phone: {
+      type: String,
+    },
+    role: {
+      type: String,
+      enum: ["user", "admin", "staff"],
+      default: "user",
+      required: true,
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
   },
-  passwordHash: {
-    type: String,
-    required: true,
-  },
-  name: {
-    type: String,
-    required: true,
-  },
-  phone: {
-    type: String,
-    required: true,
-  },
-  role: {
-    type: String,
-    enum: ["user", "admin", "staff"],
-    default: "user",
-  },
-  resetPasswordCode: String,
-  resetPasswordExpires: Date,
-});
+  {
+    timestamps: true, // Tự động thêm createdAt và updatedAt
+  }
+);
 
 userSchema.set("toJSON", {
   transform: (document, returnedObject) => {

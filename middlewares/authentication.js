@@ -18,8 +18,6 @@ const tokenExtractor = (request, response, next) => {
 // Nhiệm vụ: Xác thực token và tìm user tương ứng, sau đó gắn vào request.user
 // Middleware này chỉ xác thực, chưa kiểm tra quyền.
 const userExtractor = async (request, response, next) => {
-  console.log("[EXTRACTOR]: ", request);
-
   if (!request.token) {
     // Nếu không có token, không thể xác thực user
     const error = new Error("Token missing");

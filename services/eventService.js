@@ -30,9 +30,9 @@ const getEventById = async (eventId) => {
 
 const createEvent = async (data) => {
   const {
-    user,
+    creator,
     name,
-    bannerImage,
+    bannerImageUrl,
     description,
     location,
     format,
@@ -44,9 +44,9 @@ const createEvent = async (data) => {
   } = data;
 
   if (
-    !user ||
+    !creator ||
     !name ||
-    !bannerImage ||
+    !bannerImageUrl ||
     !description ||
     !location ||
     !format ||
@@ -101,9 +101,9 @@ const createEvent = async (data) => {
     }
   }
 
-  const userFind = await User.findById(user);
-  if (!userFind) {
-    const error = new Error("User not found!");
+  const creatorFind = await User.findById(creator);
+  if (!creatorFind) {
+    const error = new Error("Creator not found!");
     error.status = 404;
     throw error;
   }
@@ -116,9 +116,9 @@ const createEvent = async (data) => {
   }
 
   const newEvent = new Event({
-    user: userFind._id,
+    creator: creatorFind._id,
     name,
-    bannerImage,
+    bannerImageUrl,
     description,
     location,
     format,
