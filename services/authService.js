@@ -28,30 +28,92 @@ const login = async ({ email, password }) => {
     throw error;
   }
 
-  const userForToken = {
-    email: user.email,
+  // 1. Tạo Access Token (ngắn hạn)
+  const accessTokenPayload = {
     id: user._id,
+    email: user.email,
     role: user.role,
   };
+  const accessToken = jwt.sign(
+    accessTokenPayload,
+    process.env.ACCESS_TOKEN_SECRET,
+    {
+      expiresIn: "15m", // Thời gian sống ngắn: 15 phút
+    }
+  );
 
-  const token = jwt.sign(userForToken, process.env.JWT_SECRET, {
-    expiresIn: "1h",
-  });
+  // 2. Tạo Refresh Token (dài hạn)
+  const refreshTokenPayload = {
+    id: user._id,
+  };
+  const refreshToken = jwt.sign(
+    refreshTokenPayload,
+    process.env.REFRESH_TOKEN_SECRET,
+    {
+      expiresIn: "7d", // Thời gian sống dài: 7 ngày
+    }
+  );
 
   return {
-    token,
+    accessToken,
+    refreshToken,
     user: {
       id: user.id,
       email: user.email,
-      name: user.name,
+      fullfullName: user.fullfullName,
       phone: user.phone,
       role: user.role,
     },
   };
 };
 
-const registerRequest = async ({ email, password, name, role, phone }) => {
-  if (!email || !password || !name || !role || !phone) {
+// services/authService.js (thêm vào file cũ)
+
+const refreshToken = async (token) => {
+  if (!token) {
+    const error = new Error("Refresh token is required");
+    error.status = 401; // Unauthorized
+    throw error;
+  }
+
+  try {
+    // 1. Xác thực Refresh Token
+    const decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
+
+    // (Tùy chọn nhưng nên có) Kiểm tra xem user còn tồn tại trong DB không
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      const error = new Error("User not found");
+      error.status = 403; // Forbidden
+      throw error;
+    }
+
+    // 2. Tạo Access Token mới
+    const accessTokenPayload = {
+      id: user._id,
+      email: user.email,
+      role: user.role,
+    };
+    const newAccessToken = jwt.sign(
+      accessTokenPayload,
+      process.env.ACCESS_TOKEN_SECRET,
+      {
+        expiresIn: "15m",
+      }
+    );
+
+    // 3. Trả về Access Token mới
+    return { accessToken: newAccessToken };
+  } catch (err) {
+    // Nếu token không hợp lệ (hết hạn, sai chữ ký...)
+    const error = new Error("Invalid refresh token");
+    error.status = 403; // Forbidden
+    throw error;
+  }
+};
+
+const registerRequest = async ({ email, password, fullName, role, phone }) => {
+  if (!email || !password || !fullName || !role || !phone) {
     const error = new Error("All fields are required");
     error.status = 400;
     throw error;
@@ -77,7 +139,7 @@ const registerRequest = async ({ email, password, name, role, phone }) => {
   const newVerification = new Verification({
     email,
     passwordHash,
-    name,
+    fullName,
     role: "user",
     phone,
     otp,
@@ -117,7 +179,7 @@ const verifyEmail = async ({ email, otp }) => {
   const newUser = new User({
     email: verificationRecord.email,
     passwordHash: verificationRecord.passwordHash,
-    name: verificationRecord.name,
+    fullName: verificationRecord.fullName,
     phone: verificationRecord.phone,
     role: verificationRecord.role,
   });
@@ -238,8 +300,8 @@ const changePassword = async ({ userId, oldPassword, newPassword }) => {
   return { message: "Password changed successfully!" };
 };
 
-const editProfile = async ({ userId, name, phone }) => {
-  if (!userId || !name || !phone) {
+const editProfile = async ({ userId, fullName, phone }) => {
+  if (!userId || !fullName || !phone) {
     const error = new Error("All fields are required");
     error.status = 400;
     throw error;
@@ -250,7 +312,7 @@ const editProfile = async ({ userId, name, phone }) => {
     error.status = 404;
     throw error;
   }
-  user.name = name;
+  user.fullName = fullName;
   user.phone = phone;
   await user.save();
   return {
@@ -258,7 +320,7 @@ const editProfile = async ({ userId, name, phone }) => {
     user: {
       id: user.id,
       email: user.email,
-      name: user.name,
+      fullName: user.fullName,
       phone: user.phone,
       role: user.role,
     },
@@ -267,6 +329,7 @@ const editProfile = async ({ userId, name, phone }) => {
 
 module.exports = {
   login,
+  refreshToken,
   registerRequest,
   verifyEmail,
   forgotPassword,

@@ -44,4 +44,3 @@ const checkEventOwnership = async (request, response, next) => {
 module.exports = {
   checkEventOwnership,
 };
-3;

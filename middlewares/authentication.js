@@ -26,7 +26,10 @@ const userExtractor = async (request, response, next) => {
   }
 
   try {
-    const decodedToken = jwt.verify(request.token, process.env.JWT_SECRET);
+    const decodedToken = jwt.verify(
+      request.token,
+      process.env.ACCESS_TOKEN_SECRET
+    );
 
     if (!decodedToken.id) {
       const error = new Error("Token invalid or malformed");
