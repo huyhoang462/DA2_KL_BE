@@ -28,7 +28,6 @@ const login = async ({ email, password }) => {
     throw error;
   }
 
-  // 1. Tạo Access Token (ngắn hạn)
   const accessTokenPayload = {
     id: user._id,
     email: user.email,
@@ -38,11 +37,10 @@ const login = async ({ email, password }) => {
     accessTokenPayload,
     process.env.ACCESS_TOKEN_SECRET,
     {
-      expiresIn: "15m", // Thời gian sống ngắn: 15 phút
+      expiresIn: "15m",
     }
   );
 
-  // 2. Tạo Refresh Token (dài hạn)
   const refreshTokenPayload = {
     id: user._id,
   };
@@ -50,7 +48,7 @@ const login = async ({ email, password }) => {
     refreshTokenPayload,
     process.env.REFRESH_TOKEN_SECRET,
     {
-      expiresIn: "7d", // Thời gian sống dài: 7 ngày
+      expiresIn: "7d",
     }
   );
 
@@ -60,35 +58,32 @@ const login = async ({ email, password }) => {
     user: {
       id: user.id,
       email: user.email,
-      fullfullName: user.fullfullName,
+      fullName: user.fullName,
       phone: user.phone,
       role: user.role,
     },
   };
 };
 
-// services/authService.js (thêm vào file cũ)
-
 const refreshToken = async (token) => {
   if (!token) {
     const error = new Error("Refresh token is required");
-    error.status = 401; // Unauthorized
+    error.status = 401;
     throw error;
   }
 
   try {
-    // 1. Xác thực Refresh Token
+    //  Xác thực Refresh Token
     const decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
 
-    // (Tùy chọn nhưng nên có) Kiểm tra xem user còn tồn tại trong DB không
     const user = await User.findById(decoded.id);
     if (!user) {
       const error = new Error("User not found");
-      error.status = 403; // Forbidden
+      error.status = 403;
       throw error;
     }
 
-    // 2. Tạo Access Token mới
+    // Tạo Access Token mới
     const accessTokenPayload = {
       id: user._id,
       email: user.email,
@@ -102,12 +97,11 @@ const refreshToken = async (token) => {
       }
     );
 
-    // 3. Trả về Access Token mới
+    // Trả về Access Token mới
     return { accessToken: newAccessToken };
   } catch (err) {
-    // Nếu token không hợp lệ (hết hạn, sai chữ ký...)
     const error = new Error("Invalid refresh token");
-    error.status = 403; // Forbidden
+    error.status = 403;
     throw error;
   }
 };
@@ -202,6 +196,7 @@ const forgotPassword = async ({ email }) => {
     user.resetPasswordCode = code;
     user.resetPasswordExpires = Date.now() + 1000 * 60 * 10;
     await user.save();
+
     await sendResetPasswordCode(email, code);
   }
   return {
@@ -217,6 +212,7 @@ const verifyResetCode = async ({ email, code }) => {
     throw error;
   }
   const user = await User.findOne({ email });
+
   if (
     !user ||
     user.resetPasswordCode !== code ||

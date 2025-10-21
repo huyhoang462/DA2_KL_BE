@@ -1,4 +1,3 @@
-// models/user.js
 const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema(
@@ -30,6 +29,12 @@ const userSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+    },
+    resetPasswordCode: {
+      type: String,
+    },
+    resetPasswordExpires: {
+      type: Date,
     },
   },
   {

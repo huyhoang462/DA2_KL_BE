@@ -1,9 +1,7 @@
-// middlewares/auth.js
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
 
-// Middleware 1: Trích xuất Token (giữ nguyên)
-// Nhiệm vụ: Lấy chuỗi token từ header "Authorization" và gắn vào request.token
+//  Trích xuất Token: Lấy chuỗi token từ header "Authorization" và gắn vào request.token
 const tokenExtractor = (request, response, next) => {
   const authorization = request.get("authorization");
   if (authorization && authorization.startsWith("Bearer ")) {
@@ -14,12 +12,9 @@ const tokenExtractor = (request, response, next) => {
   next();
 };
 
-// Middleware 2: Trích xuất User (cải thiện)
-// Nhiệm vụ: Xác thực token và tìm user tương ứng, sau đó gắn vào request.user
-// Middleware này chỉ xác thực, chưa kiểm tra quyền.
+// Middleware 2: Trích xuất User : Xác thực token và tìm user tương ứng, sau đó gắn vào request.user
 const userExtractor = async (request, response, next) => {
   if (!request.token) {
-    // Nếu không có token, không thể xác thực user
     const error = new Error("Token missing");
     error.status = 401;
     return next(error);
@@ -44,10 +39,9 @@ const userExtractor = async (request, response, next) => {
       return next(error);
     }
 
-    request.user = user; // Gắn user vào request
+    request.user = user;
     next();
   } catch (error) {
-    // Chuyển lỗi từ jwt.verify (TokenExpiredError, JsonWebTokenError) cho error handler
     error.status = 401;
     next(error);
   }

@@ -33,7 +33,7 @@ const sendResetPasswordCode = async (toEmail, resetCode) => {
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: toEmail,
-    subject: "Your Password Reset Code for Ticketbox Clone",
+    subject: "Your Password Reset Code for Shine Ticket",
     html: `
       <h1>Password Reset</h1>
       <p>You requested to reset your password. Please use the following code to reset your password:</p>
