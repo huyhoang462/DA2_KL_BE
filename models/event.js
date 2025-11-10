@@ -32,6 +32,11 @@ const eventSchema = new mongoose.Schema(
       ref: "Category",
       required: true,
     },
+    payoutMethod: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "PayoutMethod",
+      required: true,
+    },
     status: {
       type: String,
       enum: [
