@@ -19,12 +19,12 @@ const payoutMethodSchema = new mongoose.Schema(
     bankDetails: {
       bankName: { type: String },
       accountNumber: { type: String },
-      accountHolderName: { type: String },
+      accountName: { type: String },
       bankBranch: { type: String },
     },
     momoDetails: {
       phoneNumber: { type: String },
-      accountHolderName: { type: String },
+      accountName: { type: String },
     },
   },
   {

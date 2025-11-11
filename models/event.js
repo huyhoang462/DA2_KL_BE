@@ -1,5 +1,12 @@
 const mongoose = require("mongoose");
 
+const addressComponentSchema = new mongoose.Schema(
+  {
+    code: { type: Number, required: true },
+    name: { type: String, required: true },
+  },
+  { _id: false }
+);
 const eventSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
@@ -11,8 +18,10 @@ const eventSchema = new mongoose.Schema(
       required: true,
     },
     location: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Location",
+      address: { type: String, trim: true },
+      street: { type: String, trim: true },
+      ward: { type: addressComponentSchema },
+      province: { type: addressComponentSchema, required: true },
     },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
@@ -59,11 +68,25 @@ const eventSchema = new mongoose.Schema(
 
 // Validation logic: location is required for offline events
 eventSchema.pre("validate", function (next) {
+  // 1. Nếu là sự kiện offline, street phải là bắt buộc
   if (
     this.format === "offline" &&
-    (!this.location || this.location.trim() === "")
+    (!this.street || this.street.trim() === "")
   ) {
-    this.invalidate("location", "Location is required for offline events.");
+    this.invalidate(
+      "location.street",
+      "Street is required for offline events."
+    );
+  }
+
+  // 2. Nếu là sự kiện online, xóa object location đi cho sạch sẽ
+  if (this.format === "online") {
+    this.location = undefined;
+  }
+
+  // 3. Tự động tạo fullAddress nếu các thành phần đã có
+  if (this.format === "offline" && this.street && this.ward && this.province) {
+    this.location.address = `${this.street}, ${this.ward.name}, ${this.province.name}`;
   }
   next();
 });
