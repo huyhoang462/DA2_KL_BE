@@ -27,7 +27,8 @@ const handleGetEventById = async (req, res, next) => {
 const handleCreateEvent = async (req, res, next) => {
   try {
     const data = req.body;
-    const result = await createEvent(data);
+    const creatorId = req.user._id;
+    const result = await createEvent(data, creatorId);
     res.status(201).json(result);
   } catch (error) {
     next(error);
