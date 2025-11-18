@@ -72,9 +72,7 @@ eventSchema.pre("validate", function (next) {
     (!this.location.street ||
       this.location.street.trim() === "" ||
       !this.location.ward ||
-      this.location.ward.trim() === "" ||
-      !this.location.province ||
-      this.location.province.trim() === "")
+      !this.location.province)
   ) {
     this.invalidate("Location data is required for offline events.");
   }

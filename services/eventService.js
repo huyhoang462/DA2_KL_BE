@@ -12,21 +12,122 @@ const getAllEvents = async () => {
 };
 
 const getEventById = async (eventId) => {
-  if (!eventId) {
-    const error = new Error("Event ID is required");
+  if (!mongoose.Types.ObjectId.isValid(eventId)) {
+    const error = new Error("Invalid event ID format");
     error.status = 400;
     throw error;
   }
-  const event = await Event.findById(eventId);
-  if (!event) {
-    const error = new Error("Event not found");
-    error.status = 404;
-    throw error;
+
+  // 2. Xây dựng pipeline cho Aggregation
+  const aggregationPipeline = [
+    // --- STAGE 1: $match ---
+    // Tìm chính xác document Event mà chúng ta muốn
+    {
+      $match: { _id: new mongoose.Types.ObjectId(eventId) },
+    },
+
+    // --- STAGE 2: $lookup (Lấy các Shows) ---
+    // Tương đương LEFT JOIN với collection 'shows'
+    {
+      $lookup: {
+        from: "shows", // Tên collection của model Show
+        localField: "_id", // Trường trong Events (bảng hiện tại)
+        foreignField: "event", // Trường trong 'shows' để join
+        as: "shows", // Tên của mảng mới chứa kết quả join
+      },
+    },
+
+    // --- STAGE 3: $lookup (Lấy các TicketTypes cho TẤT CẢ shows) ---
+    // Trick ở đây: chúng ta sẽ lookup một lần duy nhất
+    {
+      $lookup: {
+        from: "tickettypes", // Tên collection của TicketType
+        localField: "shows._id", // Lấy _id từ tất cả các object trong mảng 'shows'
+        foreignField: "show",
+        as: "allTicketTypes", // Tên mảng tạm thời chứa tất cả ticket types
+      },
+    },
+
+    // --- STAGE 4: $addFields (Gắn TicketTypes vào đúng Show của nó) ---
+    // Đây là bước "ma thuật" để xử lý dữ liệu
+    {
+      $addFields: {
+        shows: {
+          $map: {
+            // Lặp qua từng 'show' trong mảng 'shows'
+            input: "$shows",
+            as: "show",
+            in: {
+              $mergeObjects: [
+                // Gộp các trường của show hiện tại...
+                "$$show",
+                {
+                  // ...với một object mới chứa trường 'tickets'
+                  tickets: {
+                    $filter: {
+                      // Lọc trong mảng 'allTicketTypes'
+                      input: "$allTicketTypes",
+                      as: "ticket",
+                      cond: { $eq: ["$$ticket.show", "$$show._id"] }, // Điều kiện: ticket.show === show._id
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    },
+
+    // --- STAGE 5: $project (Dọn dẹp Output) ---
+    // Chọn các trường muốn trả về, loại bỏ các trường tạm
+    {
+      $project: {
+        allTicketTypes: 0, // 0 nghĩa là loại bỏ
+        // Nếu muốn đổi tên trường, ví dụ:
+        // creatorId: '$creator',
+      },
+    },
+
+    // --- STAGE 6: $lookup (Populate các trường tham chiếu khác như creator, category) ---
+    {
+      $lookup: {
+        from: "users",
+        localField: "creator",
+        foreignField: "_id",
+        as: "creator",
+      },
+    },
+    {
+      $lookup: {
+        from: "categories",
+        localField: "category",
+        foreignField: "_id",
+        as: "category",
+      },
+    },
+
+    // Unwind để biến mảng 1 phần tử thành object
+    { $unwind: "$creator" },
+    { $unwind: "$category" },
+  ];
+
+  // 3. Thực thi Aggregation
+  const results = await Event.aggregate(aggregationPipeline);
+
+  // 4. Xử lý kết quả
+  if (results.length === 0) {
+    return null; // Không tìm thấy event
   }
-  const shows = await Show.find({ event: eventId });
-  const eventAsJson = event.toJSON();
-  eventAsJson.shows = shows.map((show) => show.toJSON());
-  return eventAsJson;
+
+  const event = results[0]; // aggregate luôn trả về một mảng
+
+  // Custom transform to match toJSON (nếu cần)
+  event.id = event._id.toString();
+  delete event._id;
+  // ... dọn dẹp các trường khác nếu muốn
+
+  return event;
 };
 
 const createEvent = async (data, creatorId) => {
