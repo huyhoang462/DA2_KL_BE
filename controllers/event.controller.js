@@ -7,6 +7,8 @@ const {
   getEventsByUserId,
   getSearchSuggestions,
   searchEvents,
+  getPendingEvents,
+  updateEventStatus,
 } = require("../services/eventService");
 
 const handleCleanupData = async (req, res, next) => {
@@ -34,6 +36,16 @@ const handleSearchEvents = async (req, res, next) => {
     console.log("[PARAM]: ", queryParams);
 
     const result = await searchEvents(queryParams);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const handleGetPendingEvents = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const result = await getPendingEvents(page, limit);
     res.status(200).json(result);
   } catch (error) {
     next(error);
@@ -80,6 +92,17 @@ const handleCreateEvent = async (req, res, next) => {
   }
 };
 
+const handleUpdateEventStatus = async (req, res, next) => {
+  try {
+    const eventId = req.params.id;
+    const { status } = req.body;
+    const result = await updateEventStatus(eventId, status);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const handleDeleteEvent = async (req, res, next) => {
   try {
     const eventId = req.params.id;
@@ -95,8 +118,10 @@ module.exports = {
   handleSearchSuggestions,
   handleSearchEvents,
   handleGetAllEvents,
+  handleGetPendingEvents,
   handleGetEventById,
   handleGetEventsByUserId,
   handleCreateEvent,
+  handleUpdateEventStatus,
   handleDeleteEvent,
 };

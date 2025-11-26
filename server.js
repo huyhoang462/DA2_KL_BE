@@ -32,3 +32,16 @@ app.listen(PORT, () => {
 });
 
 app.use(errorHandler);
+
+// const Event = require("./models/event"); // Đường dẫn tới model của bạn
+
+// async function updateAllStatus() {
+//   try {
+//     const result = await Event.updateMany({}, { $set: { status: "pending" } });
+//     console.log("Đã cập nhật xong:", result.modifiedCount, "bản ghi.");
+//   } catch (error) {
+//     console.error("Lỗi:", error);
+//   }
+// }
+
+// updateAllStatus();

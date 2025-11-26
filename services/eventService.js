@@ -5,6 +5,10 @@ const TicketType = require("../models/ticketType");
 const Category = require("../models/category");
 const PayoutMethod = require("../models/payoutMethod");
 const mongoose = require("mongoose");
+const {
+  formatPaginatedResponse,
+  createPaginationStages,
+} = require("../utils/pagination");
 
 const cleanupOrphanedData = async () => {
   const session = await mongoose.startSession();
@@ -499,6 +503,74 @@ const searchEvents = async (queryParams) => {
   };
 };
 
+const getPendingEvents = async (page = 1, limit = 10) => {
+  // Tạo pagination stages
+  const { facetStage } = createPaginationStages(page, limit);
+
+  const aggregationPipeline = [
+    // --- STAGE 1: $match (Lọc events có status = "pending") ---
+    {
+      $match: { status: "pending" },
+    },
+
+    // --- STAGE 2: $lookup (Join với User để lấy thông tin người tạo) ---
+    {
+      $lookup: {
+        from: "users",
+        localField: "creator",
+        foreignField: "_id",
+        as: "creator",
+      },
+    },
+
+    // --- STAGE 3: $unwind Creator ---
+    {
+      $unwind: {
+        path: "$creator",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    // --- STAGE 4: $sort (Sắp xếp theo thời gian tạo mới nhất) ---
+    {
+      $sort: { createdAt: -1 },
+    },
+
+    // --- STAGE 5: $facet (Pagination) ---
+    facetStage,
+
+    // --- STAGE 6: $project (Trong data stage, chọn các trường cần thiết) ---
+    {
+      $addFields: {
+        data: {
+          $map: {
+            input: "$data",
+            as: "event",
+            in: {
+              id: { $toString: "$$event._id" },
+              bannerImageUrl: "$$event.bannerImageUrl",
+              name: "$$event.name",
+              location: "$$event.location",
+              startDate: "$$event.startDate",
+              creator: {
+                id: { $toString: "$$event.creator._id" },
+                name: "$$event.creator.fullName",
+              },
+              createdAt: "$$event.createdAt",
+            },
+          },
+        },
+      },
+    },
+  ];
+
+  // Thực thi aggregation
+  const results = await Event.aggregate(aggregationPipeline);
+
+  // Format response với pagination utility
+  return formatPaginatedResponse(results, page, limit);
+};
+
 const getAllEvents = async () => {
   const aggregationPipeline = [
     // --- STAGE 1: $match (Filter by status) ---
@@ -605,57 +677,48 @@ const getEventById = async (eventId) => {
     throw error;
   }
 
-  // 2. Xây dựng pipeline cho Aggregation
   const aggregationPipeline = [
     // --- STAGE 1: $match ---
-    // Tìm chính xác document Event mà chúng ta muốn
     {
       $match: { _id: new mongoose.Types.ObjectId(eventId) },
     },
 
     // --- STAGE 2: $lookup (Lấy các Shows) ---
-    // Tương đương LEFT JOIN với collection 'shows'
     {
       $lookup: {
-        from: "shows", // Tên collection của model Show
-        localField: "_id", // Trường trong Events (bảng hiện tại)
-        foreignField: "event", // Trường trong 'shows' để join
-        as: "shows", // Tên của mảng mới chứa kết quả join
+        from: "shows",
+        localField: "_id",
+        foreignField: "event",
+        as: "shows",
       },
     },
 
     // --- STAGE 3: $lookup (Lấy các TicketTypes cho TẤT CẢ shows) ---
-    // Trick ở đây: chúng ta sẽ lookup một lần duy nhất
     {
       $lookup: {
-        from: "tickettypes", // Tên collection của TicketType
-        localField: "shows._id", // Lấy _id từ tất cả các object trong mảng 'shows'
+        from: "tickettypes",
+        localField: "shows._id",
         foreignField: "show",
-        as: "allTicketTypes", // Tên mảng tạm thời chứa tất cả ticket types
+        as: "allTicketTypes",
       },
     },
 
     // --- STAGE 4: $addFields (Gắn TicketTypes vào đúng Show của nó) ---
-    // Đây là bước "ma thuật" để xử lý dữ liệu
     {
       $addFields: {
         shows: {
           $map: {
-            // Lặp qua từng 'show' trong mảng 'shows'
             input: "$shows",
             as: "show",
             in: {
               $mergeObjects: [
-                // Gộp các trường của show hiện tại...
                 "$$show",
                 {
-                  // ...với một object mới chứa trường 'tickets'
                   tickets: {
                     $filter: {
-                      // Lọc trong mảng 'allTicketTypes'
                       input: "$allTicketTypes",
                       as: "ticket",
-                      cond: { $eq: ["$$ticket.show", "$$show._id"] }, // Điều kiện: ticket.show === show._id
+                      cond: { $eq: ["$$ticket.show", "$$show._id"] },
                     },
                   },
                 },
@@ -667,16 +730,13 @@ const getEventById = async (eventId) => {
     },
 
     // --- STAGE 5: $project (Dọn dẹp Output) ---
-    // Chọn các trường muốn trả về, loại bỏ các trường tạm
     {
       $project: {
-        allTicketTypes: 0, // 0 nghĩa là loại bỏ
-        // Nếu muốn đổi tên trường, ví dụ:
-        // creatorId: '$creator',
+        allTicketTypes: 0,
       },
     },
 
-    // --- STAGE 6: $lookup (Populate các trường tham chiếu khác như creator, category) ---
+    // --- STAGE 6: $lookup (Populate creator, category) ---
     {
       $lookup: {
         from: "users",
@@ -694,25 +754,61 @@ const getEventById = async (eventId) => {
       },
     },
 
-    // Unwind để biến mảng 1 phần tử thành object
-    { $unwind: "$creator" },
-    { $unwind: "$category" },
+    // --- STAGE 7: $unwind creator và category ---
+    {
+      $unwind: {
+        path: "$creator",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $unwind: {
+        path: "$category",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    // --- STAGE 8: $project (Format output cuối cùng) ---
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        description: 1,
+        bannerImageUrl: 1,
+        format: 1,
+        location: 1,
+        startDate: 1,
+        endDate: 1,
+        organizer: 1,
+        status: 1,
+        createdAt: 1, // THÊM thời gian tạo
+        shows: 1,
+        category: {
+          id: { $toString: "$category._id" },
+          name: "$category.name",
+        },
+        creator: {
+          // THÊM thông tin người tạo
+          id: { $toString: "$creator._id" },
+          name: "$creator.fullName",
+        },
+      },
+    },
   ];
 
-  // 3. Thực thi Aggregation
+  // Thực thi Aggregation
   const results = await Event.aggregate(aggregationPipeline);
 
-  // 4. Xử lý kết quả
+  // Xử lý kết quả
   if (results.length === 0) {
-    return null; // Không tìm thấy event
+    return null;
   }
 
-  const event = results[0]; // aggregate luôn trả về một mảng
+  const event = results[0];
 
-  // Custom transform to match toJSON (nếu cần)
+  // Transform để match format cũ
   event.id = event._id.toString();
   delete event._id;
-  // ... dọn dẹp các trường khác nếu muốn
 
   return event;
 };
@@ -866,7 +962,7 @@ const createEvent = async (data, creatorId) => {
       creator: creator._id,
       category: category._id,
       payoutMethod: savedPayoutMethod._id,
-      status: status || "draft",
+      status: "pending",
     });
     const savedEvent = await newEvent.save({ session });
 
@@ -1003,6 +1099,78 @@ const getEventsByUserId = async (userId) => {
   }));
 };
 
+const updateEventStatus = async (eventId, status) => {
+  // Validate eventId
+  if (!eventId) {
+    const error = new Error("Event ID is required");
+    error.status = 400;
+    throw error;
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(eventId)) {
+    const error = new Error("Invalid event ID format");
+    error.status = 400;
+    throw error;
+  }
+
+  // Validate status
+  const validStatuses = [
+    "draft",
+    "pending",
+    "upcoming",
+    "ongoing",
+    "completed",
+    "rejected",
+    "cancelled",
+  ];
+
+  if (!status) {
+    const error = new Error("Status is required");
+    error.status = 400;
+    throw error;
+  }
+
+  if (!validStatuses.includes(status)) {
+    const error = new Error(
+      `Invalid status. Must be one of: ${validStatuses.join(", ")}`
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  // Tìm và cập nhật event
+  const event = await Event.findById(eventId);
+
+  if (!event) {
+    const error = new Error("Event not found");
+    error.status = 404;
+    throw error;
+  }
+
+  // Kiểm tra logic chuyển trạng thái (optional - có thể bỏ nếu không cần)
+  // Ví dụ: không cho phép chuyển từ "completed" về "pending"
+  if (event.status === "completed" && status === "pending") {
+    const error = new Error("Cannot change completed event back to pending");
+    error.status = 400;
+    throw error;
+  }
+
+  // Cập nhật status
+  event.status = status;
+  const updatedEvent = await event.save();
+
+  return {
+    success: true,
+    message: `Event status updated to ${status} successfully`,
+    event: {
+      id: updatedEvent.id,
+      name: updatedEvent.name,
+      status: updatedEvent.status,
+      updatedAt: updatedEvent.updatedAt,
+    },
+  };
+};
+
 const deleteEvent = async (eventId) => {
   if (!eventId) {
     const error = new Error("Event ID is required");
@@ -1037,8 +1205,10 @@ module.exports = {
   getSearchSuggestions,
   searchEvents,
   getAllEvents,
+  getPendingEvents,
   getEventById,
   getEventsByUserId,
   createEvent,
+  updateEventStatus,
   deleteEvent,
 };

@@ -6,8 +6,8 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
-      lowercase: true, // Luôn lưu email dưới dạng chữ thường
-      trim: true, // Xóa khoảng trắng thừa
+      lowercase: true,
+      trim: true,
     },
     passwordHash: {
       type: String,
