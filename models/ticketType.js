@@ -8,6 +8,7 @@ const ticketTypeSchema = new mongoose.Schema(
     quantitySold: { type: Number, required: true, default: 0 },
     minPurchase: { type: Number, required: true, default: 1 },
     maxPurchase: { type: Number, required: true, default: 10 },
+    description: { type: String },
     show: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Show",
