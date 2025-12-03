@@ -10,7 +10,7 @@ router.post(
   payoutMethodController.handleCreatePayoutMethod
 );
 
-router.get("/", payoutMethodController.handleGetMyPayoutMethods);
+router.get("/", userExtractor, payoutMethodController.handleGetMyPayoutMethods);
 
 router.delete(
   "/:id",

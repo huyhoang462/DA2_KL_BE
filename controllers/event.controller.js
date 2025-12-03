@@ -9,6 +9,7 @@ const {
   searchEvents,
   getPendingEvents,
   updateEventStatus,
+  updateEvent,
 } = require("../services/eventService");
 
 const handleCleanupData = async (req, res, next) => {
@@ -92,6 +93,17 @@ const handleCreateEvent = async (req, res, next) => {
   }
 };
 
+const handleUpdateEvent = async (req, res, next) => {
+  try {
+    const data = req.body;
+    const eventId = req.params.id;
+    const result = await updateEvent(eventId, data);
+    res.status(201).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const handleUpdateEventStatus = async (req, res, next) => {
   try {
     const eventId = req.params.id;
@@ -122,6 +134,7 @@ module.exports = {
   handleGetEventById,
   handleGetEventsByUserId,
   handleCreateEvent,
+  handleUpdateEvent,
   handleUpdateEventStatus,
   handleDeleteEvent,
 };

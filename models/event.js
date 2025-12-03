@@ -21,7 +21,7 @@ const eventSchema = new mongoose.Schema(
       address: { type: String, trim: true },
       street: { type: String, trim: true },
       ward: { type: addressComponentSchema },
-      province: { type: addressComponentSchema, required: true },
+      province: { type: addressComponentSchema },
     },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },

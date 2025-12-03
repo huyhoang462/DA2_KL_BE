@@ -9,6 +9,12 @@ router.get("/search/events", eventController.handleSearchEvents);
 router.get("/", eventController.handleGetAllEvents);
 router.get("/pending", eventController.handleGetPendingEvents);
 router.get("/:id", eventController.handleGetEventById);
+router.put(
+  "/:id",
+  userExtractor,
+  checkEventOwnership,
+  eventController.handleUpdateEvent
+);
 router.get("/user/:id", eventController.handleGetEventsByUserId);
 router.post("/", userExtractor, eventController.handleCreateEvent);
 router.patch(

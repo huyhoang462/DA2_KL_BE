@@ -45,3 +45,22 @@ app.use(errorHandler);
 // }
 
 // updateAllStatus();
+// const Event = require("./models/event"); // Đường dẫn tới model của bạn
+
+// async function updateToOnePayoutMethod() {
+//   try {
+//     const result = await Event.updateMany(
+//       {},
+//       {
+//         $set: {
+//           payoutMethod: new mongoose.Types.ObjectId("6925dc7bcf1e8bafb1273d74"),
+//         },
+//       }
+//     );
+//     console.log("Đã cập nhật xong:", result.modifiedCount, "bản ghi.");
+//   } catch (error) {
+//     console.error("Lỗi:", error);
+//   }
+// }
+
+// updateToOnePayoutMethod();

@@ -753,6 +753,14 @@ const getEventById = async (eventId) => {
         as: "category",
       },
     },
+    {
+      $lookup: {
+        from: "payoutmethods",
+        localField: "payoutMethod",
+        foreignField: "_id",
+        as: "payoutMethod",
+      },
+    },
 
     // --- STAGE 7: $unwind creator và category ---
     {
@@ -764,6 +772,12 @@ const getEventById = async (eventId) => {
     {
       $unwind: {
         path: "$category",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $unwind: {
+        path: "$payoutMethod",
         preserveNullAndEmptyArrays: true,
       },
     },
@@ -792,6 +806,13 @@ const getEventById = async (eventId) => {
           id: { $toString: "$creator._id" },
           name: "$creator.fullName",
         },
+        payoutMethod: {
+          id: { $toString: "$payoutMethod._id" },
+          methodType: "$payoutMethod.methodType",
+          isDefault: "$payoutMethod.isDefault",
+          bankDetails: "$payoutMethod.bankDetails",
+          momoDetails: "$payoutMethod.momoDetails",
+        },
       },
     },
   ];
@@ -813,6 +834,327 @@ const getEventById = async (eventId) => {
   return event;
 };
 
+const updateEvent = async (eventId, updateData) => {
+  // Validate eventId
+  if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
+    const error = new Error("Invalid event ID");
+    error.status = 400;
+    throw error;
+  }
+
+  // Tìm event hiện tại
+  const existingEvent = await Event.findById(eventId);
+  if (!existingEvent) {
+    const error = new Error("Event not found");
+    error.status = 404;
+    throw error;
+  }
+
+  const session = await mongoose.startSession();
+  try {
+    await session.startTransaction();
+
+    // --- 1. UPDATE BASIC EVENT FIELDS ---
+    const eventFieldsToUpdate = {};
+    const allowedFields = [
+      "name",
+      "description",
+      "bannerImageUrl",
+      "format",
+      "location",
+      "startDate",
+      "endDate",
+      "organizer",
+      "category",
+    ];
+
+    allowedFields.forEach((field) => {
+      if (updateData[field] !== undefined) {
+        eventFieldsToUpdate[field] = updateData[field];
+      }
+    });
+
+    // Validate dates if provided
+    if (updateData.startDate || updateData.endDate) {
+      const startDate = updateData.startDate
+        ? new Date(updateData.startDate)
+        : existingEvent.startDate;
+      let endDate = updateData.endDate
+        ? new Date(updateData.endDate)
+        : existingEvent.endDate;
+
+      // Adjust endDate like in createEvent
+      if (updateData.endDate) {
+        const date = new Date(updateData.endDate);
+        date.setDate(date.getDate() + 1);
+        endDate = new Date(date.getTime() - 1);
+        eventFieldsToUpdate.endDate = endDate;
+      }
+
+      if (startDate >= endDate) {
+        const error = new Error("Invalid event start or end date");
+        error.status = 400;
+        throw error;
+      }
+    }
+
+    // Update basic fields
+    if (Object.keys(eventFieldsToUpdate).length > 0) {
+      await Event.findByIdAndUpdate(eventId, eventFieldsToUpdate, { session });
+    }
+
+    // --- 2. HANDLE PAYOUT METHOD (if provided) ---
+    if (updateData.payoutMethod) {
+      let payoutMethodId;
+
+      if (updateData.payoutMethod.id) {
+        // Use existing payout method
+        const existingPayoutMethod = await PayoutMethod.findOne({
+          _id: updateData.payoutMethod.id,
+          user: existingEvent.creator,
+        }).session(session);
+
+        if (!existingPayoutMethod) {
+          const error = new Error(
+            "PayoutMethod not found or not belong to current user"
+          );
+          error.status = 404;
+          throw error;
+        }
+        payoutMethodId = existingPayoutMethod._id;
+      } else {
+        // Create new payout method
+        const newPayoutMethod = new PayoutMethod({
+          ...updateData.payoutMethod,
+          user: existingEvent.creator,
+        });
+        const savedPayoutMethod = await newPayoutMethod.save({ session });
+        payoutMethodId = savedPayoutMethod._id;
+      }
+
+      await Event.findByIdAndUpdate(
+        eventId,
+        { payoutMethod: payoutMethodId },
+        { session }
+      );
+    }
+
+    // --- 3. HANDLE SHOWS OPERATIONS ---
+    if (updateData.shows) {
+      const {
+        create = [],
+        update = [],
+        delete: deleteIds = [],
+      } = updateData.shows;
+
+      // Delete shows
+      if (deleteIds.length > 0) {
+        // First delete related tickets
+        await TicketType.deleteMany(
+          {
+            show: {
+              $in: deleteIds.map((id) => new mongoose.Types.ObjectId(id)),
+            },
+          },
+          { session }
+        );
+
+        // Then delete shows
+        await Show.deleteMany(
+          {
+            _id: {
+              $in: deleteIds.map((id) => new mongoose.Types.ObjectId(id)),
+            },
+            event: eventId,
+          },
+          { session }
+        );
+      }
+
+      // Update shows
+      for (const showUpdate of update) {
+        const { id, ...updateFields } = showUpdate;
+
+        // Validate show belongs to this event
+        const existingShow = await Show.findOne({
+          _id: id,
+          event: eventId,
+        }).session(session);
+
+        if (!existingShow) {
+          const error = new Error(
+            `Show ${id} not found or doesn't belong to this event`
+          );
+          error.status = 404;
+          throw error;
+        }
+
+        // Validate time ranges if provided
+        if (updateFields.startTime || updateFields.endTime) {
+          const showStart = updateFields.startTime
+            ? new Date(updateFields.startTime)
+            : existingShow.startTime;
+          const showEnd = updateFields.endTime
+            ? new Date(updateFields.endTime)
+            : existingShow.endTime;
+
+          if (showStart >= showEnd) {
+            const error = new Error(
+              `Invalid time range for show ${existingShow.name}`
+            );
+            error.status = 400;
+            throw error;
+          }
+        }
+
+        await Show.findByIdAndUpdate(id, updateFields, { session });
+      }
+
+      // Create new shows
+      for (const newShowData of create) {
+        const { tickets = [], ...showData } = newShowData;
+
+        // Validate required fields
+        if (!showData.name || !showData.startTime || !showData.endTime) {
+          const error = new Error(
+            "Show must have name, startTime, and endTime"
+          );
+          error.status = 400;
+          throw error;
+        }
+
+        // Validate time range
+        const showStart = new Date(showData.startTime);
+        const showEnd = new Date(showData.endTime);
+        if (showStart >= showEnd) {
+          const error = new Error(
+            `Invalid time range for new show ${showData.name}`
+          );
+          error.status = 400;
+          throw error;
+        }
+
+        const newShow = new Show({
+          ...showData,
+          startTime: showStart,
+          endTime: showEnd,
+          event: eventId,
+        });
+        const savedShow = await newShow.save({ session });
+
+        // Create tickets for new show
+        if (tickets.length > 0) {
+          const ticketTypesData = tickets.map((ticketData) => ({
+            name: ticketData.name,
+            price: ticketData.price,
+            quantityTotal: ticketData.quantityTotal,
+            minPurchase: ticketData.minPurchase || 1,
+            maxPurchase: ticketData.maxPurchase || 10,
+            description: ticketData.description,
+            show: savedShow._id,
+          }));
+
+          await TicketType.insertMany(ticketTypesData, { session });
+        }
+      }
+    }
+
+    // --- 4. HANDLE TICKETS OPERATIONS ---
+    if (updateData.tickets) {
+      const {
+        create = [],
+        update = [],
+        delete: deleteIds = [],
+      } = updateData.tickets;
+
+      // Delete tickets
+      if (deleteIds.length > 0) {
+        await TicketType.deleteMany(
+          {
+            _id: {
+              $in: deleteIds.map((id) => new mongoose.Types.ObjectId(id)),
+            },
+          },
+          { session }
+        );
+      }
+
+      // Update tickets
+      for (const ticketUpdate of update) {
+        const { id, ...updateFields } = ticketUpdate;
+
+        // Validate ticket exists and belongs to a show of this event
+        const existingTicket = await TicketType.findById(id)
+          .populate("show")
+          .session(session);
+        if (
+          !existingTicket ||
+          existingTicket.show.event.toString() !== eventId
+        ) {
+          const error = new Error(
+            `Ticket ${id} not found or doesn't belong to this event`
+          );
+          error.status = 404;
+          throw error;
+        }
+
+        await TicketType.findByIdAndUpdate(id, updateFields, { session });
+      }
+
+      // Create new tickets
+      for (const newTicketData of create) {
+        // Validate required fields
+        if (
+          !newTicketData.showId ||
+          !newTicketData.name ||
+          newTicketData.price == null ||
+          newTicketData.quantityTotal == null
+        ) {
+          const error = new Error(
+            "New ticket must have showId, name, price, and quantityTotal"
+          );
+          error.status = 400;
+          throw error;
+        }
+
+        // Validate show belongs to this event
+        const show = await Show.findOne({
+          _id: newTicketData.showId,
+          event: eventId,
+        }).session(session);
+
+        if (!show) {
+          const error = new Error(
+            `Show ${newTicketData.showId} not found or doesn't belong to this event`
+          );
+          error.status = 404;
+          throw error;
+        }
+
+        const { showId, ...ticketData } = newTicketData;
+        const newTicket = new TicketType({
+          ...ticketData,
+          show: showId,
+          minPurchase: ticketData.minPurchase || 1,
+          maxPurchase: ticketData.maxPurchase || 10,
+        });
+
+        await newTicket.save({ session });
+      }
+    }
+
+    await session.commitTransaction();
+
+    // Return updated event
+    return await getEventById(eventId);
+  } catch (error) {
+    await session.abortTransaction();
+    console.error("Transaction Error in updateEvent:", error);
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+};
 const createEvent = async (data, creatorId) => {
   const {
     name,
@@ -944,11 +1286,34 @@ const createEvent = async (data, creatorId) => {
   try {
     session.startTransaction();
 
-    const newPayoutMethod = new PayoutMethod({
-      ...payoutMethodData,
-      user: creator._id,
-    });
-    const savedPayoutMethod = await newPayoutMethod.save({ session });
+    // --- XỬ LÝ PAYOUT METHOD ---
+    let payoutMethodId;
+
+    if (payoutMethodData.id) {
+      // Trường hợp có ID - dùng PayoutMethod cũ
+      const existingPayoutMethod = await PayoutMethod.findOne({
+        _id: payoutMethodData.id,
+        user: creator._id, // Đảm bảo PayoutMethod thuộc về user hiện tại
+      }).session(session);
+
+      if (!existingPayoutMethod) {
+        const error = new Error(
+          "PayoutMethod not found or not belong to current user"
+        );
+        error.status = 404;
+        throw error;
+      }
+
+      payoutMethodId = existingPayoutMethod._id;
+    } else {
+      // Trường hợp không có ID - tạo mới PayoutMethod
+      const newPayoutMethod = new PayoutMethod({
+        ...payoutMethodData,
+        user: creator._id,
+      });
+      const savedPayoutMethod = await newPayoutMethod.save({ session });
+      payoutMethodId = savedPayoutMethod._id;
+    }
 
     const newEvent = new Event({
       name,
@@ -961,7 +1326,7 @@ const createEvent = async (data, creatorId) => {
       organizer,
       creator: creator._id,
       category: category._id,
-      payoutMethod: savedPayoutMethod._id,
+      payoutMethod: payoutMethodId,
       status: "pending",
     });
     const savedEvent = await newEvent.save({ session });
@@ -1209,6 +1574,7 @@ module.exports = {
   getEventById,
   getEventsByUserId,
   createEvent,
+  updateEvent,
   updateEventStatus,
   deleteEvent,
 };
