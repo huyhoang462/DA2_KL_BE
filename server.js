@@ -6,6 +6,7 @@ const mongoose = require("mongoose");
 const errorHandler = require("./middlewares/errorHandler");
 const cookieParser = require("cookie-parser");
 const { tokenExtractor } = require("./middlewares/authentication");
+const { updateEventStatuses } = require("./services/eventStatusService"); // ✅ IMPORT
 
 const app = express();
 
@@ -64,3 +65,103 @@ app.use(errorHandler);
 // }
 
 // updateToOnePayoutMethod();
+
+const Order = require("./models/order");
+const OrderItem = require("./models/orderItem");
+const Ticket = require("./models/ticket");
+const Transaction = require("./models/transaction");
+const TicketType = require("./models/ticketType");
+
+// Chạy ngay khi server khởi động
+updateEventStatuses()
+  .then((result) => {
+    console.log("Initial event status check completed:", result);
+  })
+  .catch((error) => {
+    console.error("Initial event status check failed:", error);
+  });
+
+// Chạy định kỳ mỗi 5 phút
+const EVENT_STATUS_CHECK_INTERVAL = 5 * 60 * 1000; // 5 phút
+
+setInterval(async () => {
+  try {
+    await updateEventStatuses();
+  } catch (error) {
+    console.error("Scheduled event status check failed:", error);
+  }
+}, EVENT_STATUS_CHECK_INTERVAL);
+
+console.log(
+  `✅ Event status checker started (runs every ${
+    EVENT_STATUS_CHECK_INTERVAL / 1000 / 60
+  } minutes)`
+);
+
+async function resetOrders() {
+  const session = await mongoose.startSession();
+
+  try {
+    await session.startTransaction();
+
+    console.log("\n🔄 Starting order reset...\n");
+
+    // 1. Xóa tất cả Tickets
+    const deletedTickets = await Ticket.deleteMany({}, { session });
+    console.log(`✅ Deleted ${deletedTickets.deletedCount} tickets`);
+
+    // 2. Xóa tất cả Transactions
+    const deletedTransactions = await Transaction.deleteMany({}, { session });
+    console.log(`✅ Deleted ${deletedTransactions.deletedCount} transactions`);
+
+    // 3. Xóa tất cả OrderItems
+    const deletedOrderItems = await OrderItem.deleteMany({}, { session });
+    console.log(`✅ Deleted ${deletedOrderItems.deletedCount} order items`);
+
+    // 4. Xóa tất cả Orders
+    const deletedOrders = await Order.deleteMany({}, { session });
+    console.log(`✅ Deleted ${deletedOrders.deletedCount} orders`);
+
+    // 5. Reset quantitySold của tất cả TicketTypes về 0
+    const updatedTicketTypes = await TicketType.updateMany(
+      {},
+      { $set: { quantitySold: 0 } },
+      { session }
+    );
+    console.log(
+      `✅ Reset ${updatedTicketTypes.modifiedCount} ticket types (quantitySold = 0)`
+    );
+
+    await session.commitTransaction();
+
+    console.log("\n🎉 Order reset completed successfully!\n");
+
+    return {
+      success: true,
+      deleted: {
+        tickets: deletedTickets.deletedCount,
+        transactions: deletedTransactions.deletedCount,
+        orderItems: deletedOrderItems.deletedCount,
+        orders: deletedOrders.deletedCount,
+      },
+      updated: {
+        ticketTypes: updatedTicketTypes.modifiedCount,
+      },
+    };
+  } catch (error) {
+    await session.abortTransaction();
+    console.error("\n❌ Error resetting orders:", error);
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+}
+
+// ⚠️ UNCOMMENT ĐỂ CHẠY (CHỈ DÙNG KHI CẦN)
+// resetOrders()
+//   .then((result) => {
+//     console.log("Reset result:", result);
+//   })
+//   .catch((error) => {
+//     console.error("Reset failed:", error);
+//   });

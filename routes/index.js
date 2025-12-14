@@ -4,6 +4,12 @@ const uploadRouter = require("./upload.routes");
 const categoryRoutes = require("./category.routes");
 const eventRoute = require("./event.routes");
 const payoutMethodRoute = require("./payout.routes");
+const orderRoute = require("./order.routes");
+const paymentRoute = require("./payment.routes");
+const orderItemRoutes = require("./orderItem.routes");
+const ticketRoutes = require("./ticket.routes");
+const transactionRoutes = require("./transaction.routes");
+
 const initRoutes = (app) => {
   app.use("/api/auth", authRoutes);
   app.use("/api/user", userRoutes);
@@ -11,5 +17,10 @@ const initRoutes = (app) => {
   app.use("/api/categories", categoryRoutes);
   app.use("/api/events", eventRoute);
   app.use("/api/payout-methods", payoutMethodRoute);
+  app.use("/api/orders", orderRoute);
+  app.use("/api/payment", paymentRoute);
+  app.use("/api/order-items", orderItemRoutes);
+  app.use("/api/tickets", ticketRoutes);
+  app.use("/api/transactions", transactionRoutes);
 };
 module.exports = initRoutes;

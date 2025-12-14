@@ -3,7 +3,6 @@ const mongoose = require("mongoose");
 
 const ticketSchema = new mongoose.Schema(
   {
-    // --- LIÊN KẾT DỮ LIỆU ---
     ticketType: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "TicketType",
@@ -20,9 +19,7 @@ const ticketSchema = new mongoose.Schema(
       required: true,
     },
 
-    // --- THÔNG TIN VÉ ---
     qrCode: {
-      // Sẽ được sinh ra tự động
       type: String,
       required: true,
       unique: true,
@@ -34,9 +31,8 @@ const ticketSchema = new mongoose.Schema(
       required: true,
     },
 
-    // --- THÔNG TIN CHECK-IN/OUT ---
-    checkinAt: { type: Date }, // Thời điểm check-in
-    lastCheckOutAt: { type: Date }, // Thời điểm ra ngoài gần nhất (để quản lý lượt ra vào)
+    checkinAt: { type: Date },
+    lastCheckOutAt: { type: Date },
 
     // --- THÔNG TIN NFT (để dành) ---
     blockchainNetwork: { type: String },

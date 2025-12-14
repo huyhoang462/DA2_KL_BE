@@ -60,6 +60,16 @@ const eventSchema = new mongoose.Schema(
       default: "draft",
       required: true,
     },
+    cancelReason: {
+      type: String,
+      enum: [
+        "admin_cancelled",
+        "organizer_cancelled",
+        "approval_expired",
+        "other",
+      ],
+      default: null,
+    },
   },
   {
     timestamps: true,
