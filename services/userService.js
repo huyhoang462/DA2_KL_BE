@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const User = require("../models/user");
+const StaffPermission = require("../models/staffPermission");
 const mongoose = require("mongoose");
 
 const createStaffAccount = async (staffData, creator) => {
@@ -42,8 +43,33 @@ const getStaffByCreator = async (creator) => {
   const staffAccounts = await User.find({
     role: "staff",
     createdBy: creator._id,
+  }).lean();
+
+  // Lấy staff IDs
+  const staffIds = staffAccounts.map((staff) => staff._id);
+
+  // Đếm số events được phân công cho mỗi staff
+  const permissionCounts = await StaffPermission.aggregate([
+    { $match: { staff: { $in: staffIds } } },
+    { $group: { _id: "$staff", count: { $sum: 1 } } },
+  ]);
+
+  // Tạo map để lookup nhanh
+  const countMap = new Map();
+  permissionCounts.forEach((item) => {
+    countMap.set(item._id.toString(), item.count);
   });
-  return staffAccounts.map((staff) => staff.toJSON());
+
+  // Thêm eventsAssigned vào mỗi staff
+  return staffAccounts.map((staff) => ({
+    id: staff._id.toString(),
+    email: staff.email,
+    fullName: staff.fullName,
+    phone: staff.phone,
+    role: staff.role,
+    createdBy: staff.createdBy,
+    eventsAssigned: countMap.get(staff._id.toString()) || 0,
+  }));
 };
 
 const updateStaffAccount = async (staffId, updateData, creator) => {

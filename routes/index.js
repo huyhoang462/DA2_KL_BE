@@ -9,6 +9,7 @@ const paymentRoute = require("./payment.routes");
 const orderItemRoutes = require("./orderItem.routes");
 const ticketRoutes = require("./ticket.routes");
 const transactionRoutes = require("./transaction.routes");
+const staffPermissionRoutes = require("./staffPermission.routes");
 
 const initRoutes = (app) => {
   app.use("/api/auth", authRoutes);
@@ -22,5 +23,6 @@ const initRoutes = (app) => {
   app.use("/api/order-items", orderItemRoutes);
   app.use("/api/tickets", ticketRoutes);
   app.use("/api/transactions", transactionRoutes);
+  app.use("/api/staff-permissions", staffPermissionRoutes);
 };
 module.exports = initRoutes;
