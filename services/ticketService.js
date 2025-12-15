@@ -82,10 +82,10 @@ const getTicketsByUserId = async (userId) => {
       select: "name price description",
       populate: {
         path: "show",
-        select: "name startTime endTime venue",
+        select: "name startTime endTime",
         populate: {
           path: "event",
-          select: "name poster",
+          select: "name bannerImageUrl location format",
         },
       },
     })
@@ -96,48 +96,48 @@ const getTicketsByUserId = async (userId) => {
     .sort({ createdAt: -1 })
     .lean();
 
-  return tickets.map((ticket) => ({
-    id: ticket._id.toString(),
-    qrCode: ticket.qrCode,
-    status: ticket.status,
-    checkinAt: ticket.checkinAt,
-    lastCheckOutAt: ticket.lastCheckOutAt,
-    mintStatus: ticket.mintStatus,
-    ticketType: ticket.ticketType
-      ? {
-          id: ticket.ticketType._id.toString(),
-          name: ticket.ticketType.name,
-          price: ticket.ticketType.price,
-          description: ticket.ticketType.description,
-          show: ticket.ticketType.show
-            ? {
-                id: ticket.ticketType.show._id.toString(),
-                name: ticket.ticketType.show.name,
-                startTime: ticket.ticketType.show.startTime,
-                endTime: ticket.ticketType.show.endTime,
-                venue: ticket.ticketType.show.venue,
-                event: ticket.ticketType.show.event
-                  ? {
-                      id: ticket.ticketType.show.event._id.toString(),
-                      name: ticket.ticketType.show.event.name,
-                      poster: ticket.ticketType.show.event.poster,
-                    }
-                  : null,
-              }
-            : null,
-        }
-      : null,
-    order: ticket.order
-      ? {
-          id: ticket.order._id.toString(),
-          totalAmount: ticket.order.totalAmount,
-          status: ticket.order.status,
-          createdAt: ticket.order.createdAt,
-        }
-      : null,
-    createdAt: ticket.createdAt,
-    updatedAt: ticket.updatedAt,
-  }));
+  return tickets.map((ticket) => {
+    const ticketType = ticket.ticketType;
+    const show = ticketType?.show;
+    const event = show?.event;
+
+    return {
+      // Ticket info
+      id: ticket._id.toString(),
+      qrCode: ticket.qrCode,
+      status: ticket.status,
+      checkinAt: ticket.checkinAt,
+      lastCheckOutAt: ticket.lastCheckOutAt,
+      mintStatus: ticket.mintStatus,
+      createdAt: ticket.createdAt,
+      updatedAt: ticket.updatedAt,
+
+      // TicketType info (flat)
+      ticketTypeId: ticketType?._id.toString() || null,
+      ticketTypeName: ticketType?.name || null,
+      price: ticketType?.price || null,
+      description: ticketType?.description || null,
+
+      // Show info (flat)
+      showId: show?._id.toString() || null,
+      showName: show?.name || null,
+      startTime: show?.startTime || null,
+      endTime: show?.endTime || null,
+
+      // Event info (flat)
+      eventId: event?._id.toString() || null,
+      eventName: event?.name || null,
+      bannerImageUrl: event?.bannerImageUrl || null,
+      location: event?.format === "offline" ? event?.location?.address : null, // Chỉ lấy location nếu offline
+      format: event?.format || null,
+
+      // // Order info (flat)
+      // orderId: ticket.order?._id.toString() || null,
+      // orderTotalAmount: ticket.order?.totalAmount || null,
+      // orderStatus: ticket.order?.status || null,
+      // orderCreatedAt: ticket.order?.createdAt || null,
+    };
+  });
 };
 
 /**

@@ -1,4 +1,8 @@
-const { createOrder, getOrderStatus } = require("../services/orderService");
+const {
+  createOrder,
+  getOrderStatus,
+  getOrdersByUserId,
+} = require("../services/orderService");
 const { vnpayConfig, ProductCode } = require("../config/vnpayConfig");
 
 const handleCreatePayment = async (req, res, next) => {
@@ -67,7 +71,24 @@ const handleGetOrderStatus = async (req, res, next) => {
   }
 };
 
+const handleGetMyOrders = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const orders = await getOrdersByUserId(userId);
+
+    res.status(200).json({
+      success: true,
+      orders,
+      total: orders.length,
+    });
+  } catch (error) {
+    console.error("[GET MY ORDERS] Error:", error);
+    next(error);
+  }
+};
+
 module.exports = {
   handleCreatePayment,
   handleGetOrderStatus,
+  handleGetMyOrders,
 };

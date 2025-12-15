@@ -3,6 +3,8 @@ const OrderItem = require("../models/orderItem");
 const TicketType = require("../models/ticketType");
 const Show = require("../models/show");
 const Event = require("../models/event");
+const Transaction = require("../models/transaction");
+const Ticket = require("../models/ticket");
 const mongoose = require("mongoose");
 
 const createOrder = async (orderData, buyerId, retryCount = 0) => {
@@ -425,8 +427,107 @@ const cleanupExpiredOrders = async () => {
   }
 };
 
+/**
+ * Lấy tất cả orders của user với đầy đủ thông tin
+ * @param {String} userId - ID của user
+ * @returns {Array} Danh sách orders với items, transactions, tickets
+ */
+const getOrdersByUserId = async (userId) => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    const error = new Error("Invalid user ID format");
+    error.status = 400;
+    throw error;
+  }
+
+  try {
+    const orders = await Order.find({ buyer: userId })
+      .sort({ createdAt: -1 }) // Mới nhất trước
+      .lean(); // Sử dụng lean() để performance tốt hơn
+
+    // Lấy tất cả order IDs
+    const orderIds = orders.map((order) => order._id);
+
+    // Parallel fetch các thông tin liên quan
+    const [orderItems, transactions, tickets] = await Promise.all([
+      // Lấy order items với populate full chain
+      OrderItem.find({ order: { $in: orderIds } })
+        .populate({
+          path: "ticketType",
+          populate: {
+            path: "show",
+            populate: {
+              path: "event",
+              select: "name bannerImageUrl location startDate endDate format",
+            },
+          },
+        })
+        .lean(),
+
+      // Lấy transactions
+      Transaction.find({ order: { $in: orderIds } })
+        .select("order amount paymentMethod status transactionCode createdAt")
+        .lean(),
+
+      // Lấy tickets count cho mỗi order (chỉ đếm thôi)
+      Ticket.aggregate([
+        { $match: { order: { $in: orderIds } } },
+        { $group: { _id: "$order", count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    // Tạo map để lookup nhanh
+    const itemsByOrder = {};
+    const transactionsByOrder = {};
+    const ticketCountByOrder = {};
+
+    orderItems.forEach((item) => {
+      const orderId = item.order.toString();
+      if (!itemsByOrder[orderId]) {
+        itemsByOrder[orderId] = [];
+      }
+      itemsByOrder[orderId].push(item);
+    });
+
+    transactions.forEach((txn) => {
+      const orderId = txn.order.toString();
+      if (!transactionsByOrder[orderId]) {
+        transactionsByOrder[orderId] = [];
+      }
+      transactionsByOrder[orderId].push(txn);
+    });
+
+    tickets.forEach((ticket) => {
+      const orderId = ticket._id.toString();
+      ticketCountByOrder[orderId] = ticket.count;
+    });
+
+    // Combine tất cả thông tin
+    const ordersWithDetails = orders.map((order) => {
+      const orderId = order._id.toString();
+      return {
+        id: orderId,
+        orderCode: order.orderCode,
+        totalAmount: order.totalAmount,
+        status: order.status,
+        expiresAt: order.expiresAt,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        items: itemsByOrder[orderId] || [],
+        transactions: transactionsByOrder[orderId] || [],
+        ticketCount: ticketCountByOrder[orderId] || 0,
+      };
+    });
+
+    return ordersWithDetails;
+  } catch (error) {
+    console.error("Error in getOrdersByUserId:", error);
+    throw error;
+  }
+};
+
 module.exports = {
   createOrder,
   getOrderStatus,
+  getOrdersByUserId,
   cleanupExpiredOrders,
 };

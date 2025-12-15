@@ -9,6 +9,9 @@ router.post(
   orderController.handleCreatePayment
 );
 
+// Lấy danh sách orders của user hiện tại
+router.get("/my-orders", userExtractor, orderController.handleGetMyOrders);
+
 // Kiểm tra trạng thái order
 router.get("/:orderId/status", orderController.handleGetOrderStatus);
 
