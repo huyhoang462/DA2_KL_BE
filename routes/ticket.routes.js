@@ -6,6 +6,12 @@ const { requireAdmin } = require("../middlewares/authorization"); // ← SỬA: 
 // Lấy tất cả tickets của user hiện tại
 router.get("/my-tickets", userExtractor, ticketController.handleGetMyTickets);
 
+// Lấy ticket types của show
+router.get(
+  "/show/:showId/ticket-types",
+  ticketController.handleGetTicketTypesByShow
+);
+
 // Lấy tickets theo order ID
 router.get(
   "/order/:orderId",

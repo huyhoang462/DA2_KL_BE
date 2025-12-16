@@ -4,6 +4,9 @@ const Show = require("../models/show");
 const TicketType = require("../models/ticketType");
 const Category = require("../models/category");
 const PayoutMethod = require("../models/payoutMethod");
+const Order = require("../models/order");
+const OrderItem = require("../models/orderItem");
+const Ticket = require("../models/ticket");
 const mongoose = require("mongoose");
 const {
   formatPaginatedResponse,
@@ -1567,6 +1570,368 @@ const deleteEvent = async (eventId) => {
   }
 };
 
+/**
+ * Dashboard Overview - Lấy tổng quan sự kiện
+ * @param {string} eventId - ID của event
+ * @returns {Object} - Metrics và ticket breakdown
+ */
+const getDashboardOverview = async (eventId) => {
+  try {
+    // 1. Kiểm tra event có tồn tại không
+    const event = await Event.findById(eventId);
+    if (!event) {
+      const error = new Error("Event not found");
+      error.status = 404;
+      throw error;
+    }
+
+    // 2. Lấy tất cả shows của event
+    const shows = await Show.find({ event: eventId });
+    const showIds = shows.map((show) => show._id);
+
+    // 3. Lấy tất cả ticket types của event
+    const ticketTypes = await TicketType.find({ show: { $in: showIds } });
+    const ticketTypeIds = ticketTypes.map((tt) => tt._id);
+
+    // 4. Lấy tất cả orders liên quan (thông qua orderItems)
+    const orderItems = await OrderItem.find({
+      ticketType: { $in: ticketTypeIds },
+    }).populate("order");
+
+    // Filter orders: chỉ lấy paid và pending
+    const relevantOrderIds = [
+      ...new Set(
+        orderItems
+          .filter(
+            (item) =>
+              item.order &&
+              (item.order.status === "paid" || item.order.status === "pending")
+          )
+          .map((item) => item.order._id.toString())
+      ),
+    ];
+
+    const orders = await Order.find({
+      _id: { $in: relevantOrderIds },
+    });
+
+    // 5. Tính toán metrics
+    const paidOrders = orders.filter((order) => order.status === "paid");
+    const pendingOrders = orders.filter((order) => order.status === "pending");
+
+    const totalRevenue = paidOrders.reduce(
+      (sum, order) => sum + order.totalAmount,
+      0
+    );
+
+    const totalOrders = paidOrders.length;
+    const pendingOrdersCount = pendingOrders.length;
+
+    // Tính tổng tickets sold và checked in
+    const totalTickets = ticketTypes.reduce(
+      (sum, tt) => sum + tt.quantityTotal,
+      0
+    );
+    const ticketsSold = ticketTypes.reduce(
+      (sum, tt) => sum + tt.quantitySold,
+      0
+    );
+    const ticketsCheckedIn = ticketTypes.reduce(
+      (sum, tt) => sum + tt.quantityCheckedIn,
+      0
+    );
+
+    // Conversion rate: (paid orders / (paid + failed + cancelled)) * 100
+    const allOrders = await Order.find({
+      _id: { $in: orderItems.map((item) => item.order._id) },
+    });
+    const conversionRate =
+      allOrders.length > 0
+        ? ((paidOrders.length / allOrders.length) * 100).toFixed(2)
+        : 0;
+
+    const revenuePerOrder =
+      totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
+
+    const avgTicketsPerOrder =
+      totalOrders > 0 ? (ticketsSold / totalOrders).toFixed(2) : 0;
+
+    // 6. Ticket breakdown by show
+    const ticketBreakdownByShow = await Promise.all(
+      shows.map(async (show) => {
+        const showTicketTypes = ticketTypes.filter(
+          (tt) => tt.show.toString() === show._id.toString()
+        );
+
+        const totalShowTickets = showTicketTypes.reduce(
+          (sum, tt) => sum + tt.quantityTotal,
+          0
+        );
+        const soldShowTickets = showTicketTypes.reduce(
+          (sum, tt) => sum + tt.quantitySold,
+          0
+        );
+        const checkedInShowTickets = showTicketTypes.reduce(
+          (sum, tt) => sum + tt.quantityCheckedIn,
+          0
+        );
+
+        return {
+          showId: show._id,
+          showName: show.name,
+          startTime: show.startTime,
+          totalTickets: totalShowTickets,
+          soldTickets: soldShowTickets,
+          checkedInTickets: checkedInShowTickets,
+          availableTickets: totalShowTickets - soldShowTickets,
+          selloutPercentage:
+            totalShowTickets > 0
+              ? ((soldShowTickets / totalShowTickets) * 100).toFixed(2)
+              : 0,
+        };
+      })
+    );
+
+    // 7. Ticket breakdown by type
+    const ticketBreakdownByType = ticketTypes.map((tt) => {
+      const show = shows.find((s) => s._id.toString() === tt.show.toString());
+      return {
+        ticketTypeId: tt._id,
+        ticketTypeName: tt.name,
+        showName: show ? show.name : "Unknown",
+        price: tt.price,
+        totalQuantity: tt.quantityTotal,
+        soldQuantity: tt.quantitySold,
+        checkedInQuantity: tt.quantityCheckedIn,
+        availableQuantity: tt.quantityTotal - tt.quantitySold,
+        selloutPercentage:
+          tt.quantityTotal > 0
+            ? ((tt.quantitySold / tt.quantityTotal) * 100).toFixed(2)
+            : 0,
+      };
+    });
+
+    return {
+      success: true,
+      eventInfo: {
+        eventId: event._id,
+        eventName: event.name,
+        status: event.status,
+        startDate: event.startDate,
+        endDate: event.endDate,
+      },
+      metrics: {
+        totalRevenue,
+        totalOrders,
+        pendingOrders: pendingOrdersCount,
+        totalTickets,
+        ticketsSold,
+        ticketsCheckedIn,
+        conversionRate: parseFloat(conversionRate),
+        revenuePerOrder,
+        avgTicketsPerOrder: parseFloat(avgTicketsPerOrder),
+      },
+      ticketBreakdown: {
+        summary: {
+          totalShows: shows.length,
+          totalTicketTypes: ticketTypes.length,
+          totalTickets,
+          soldTickets: ticketsSold,
+          checkedInTickets: ticketsCheckedIn,
+          availableTickets: totalTickets - ticketsSold,
+          overallSelloutPercentage:
+            totalTickets > 0
+              ? ((ticketsSold / totalTickets) * 100).toFixed(2)
+              : 0,
+        },
+        byShow: ticketBreakdownByShow,
+        byType: ticketBreakdownByType,
+      },
+    };
+  } catch (error) {
+    console.error("[getDashboardOverview] Error:", error);
+    throw error;
+  }
+};
+
+/**
+ * Revenue Analytics - Phân tích doanh thu theo thời gian
+ * @param {string} eventId - ID của event
+ * @param {Date} startDate - Ngày bắt đầu
+ * @param {Date} endDate - Ngày kết thúc
+ * @param {string} groupBy - 'day' hoặc 'hour'
+ * @returns {Object} - Dữ liệu revenue chart
+ */
+const getRevenueAnalytics = async (
+  eventId,
+  startDate = null,
+  endDate = null,
+  groupBy = "day"
+) => {
+  try {
+    // 1. Kiểm tra event
+    const event = await Event.findById(eventId);
+    if (!event) {
+      const error = new Error("Event not found");
+      error.status = 404;
+      throw error;
+    }
+
+    // 2. Xác định date range
+    const dateFilter = {};
+    if (startDate) {
+      dateFilter.$gte = new Date(startDate);
+    }
+    if (endDate) {
+      dateFilter.$lte = new Date(endDate);
+    }
+
+    // 3. Lấy shows và ticket types
+    const shows = await Show.find({ event: eventId });
+    const showIds = shows.map((show) => show._id);
+    const ticketTypes = await TicketType.find({ show: { $in: showIds } });
+    const ticketTypeIds = ticketTypes.map((tt) => tt._id);
+
+    // 4. Lấy orders (chỉ paid)
+    const orderItems = await OrderItem.find({
+      ticketType: { $in: ticketTypeIds },
+    });
+
+    const orderIds = [
+      ...new Set(orderItems.map((item) => item.order.toString())),
+    ];
+
+    const matchFilter = {
+      _id: { $in: orderIds.map((id) => new mongoose.Types.ObjectId(id)) },
+      status: "paid",
+    };
+
+    if (Object.keys(dateFilter).length > 0) {
+      matchFilter.createdAt = dateFilter;
+    }
+
+    // 5. Aggregation để group theo ngày hoặc giờ
+    let dateFormat;
+    if (groupBy === "hour") {
+      dateFormat = "%Y-%m-%d %H:00:00";
+    } else {
+      dateFormat = "%Y-%m-%d";
+    }
+
+    const aggregationResult = await Order.aggregate([
+      { $match: matchFilter },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: dateFormat,
+              date: "$createdAt",
+              timezone: "Asia/Ho_Chi_Minh",
+            },
+          },
+          revenue: { $sum: "$totalAmount" },
+          orderCount: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // 6. Tính tổng tickets bán được theo từng ngày/giờ
+    // Lấy tất cả tickets với order và createdAt
+    const tickets = await Ticket.find({
+      order: { $in: orderIds },
+    })
+      .populate({
+        path: "order",
+        match: matchFilter,
+      })
+      .populate("ticketType");
+
+    const validTickets = tickets.filter((t) => t.order !== null);
+
+    // Group tickets theo date
+    const ticketsByDate = {};
+    validTickets.forEach((ticket) => {
+      const date = new Date(ticket.order.createdAt);
+      let dateKey;
+      if (groupBy === "hour") {
+        dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+          2,
+          "0"
+        )}-${String(date.getDate()).padStart(2, "0")} ${String(
+          date.getHours()
+        ).padStart(2, "0")}:00:00`;
+      } else {
+        dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+          2,
+          "0"
+        )}-${String(date.getDate()).padStart(2, "0")}`;
+      }
+
+      if (!ticketsByDate[dateKey]) {
+        ticketsByDate[dateKey] = 0;
+      }
+      ticketsByDate[dateKey]++;
+    });
+
+    // 7. Merge data
+    const chartData = aggregationResult.map((item) => ({
+      date: item._id,
+      revenue: item.revenue,
+      orders: item.orderCount,
+      tickets: ticketsByDate[item._id] || 0,
+    }));
+
+    // 8. Tính summary
+    const totalRevenue = aggregationResult.reduce(
+      (sum, item) => sum + item.revenue,
+      0
+    );
+    const totalOrders = aggregationResult.reduce(
+      (sum, item) => sum + item.orderCount,
+      0
+    );
+    const totalTickets = validTickets.length;
+
+    const avgDailyRevenue =
+      chartData.length > 0 ? Math.round(totalRevenue / chartData.length) : 0;
+
+    // Tìm peak date
+    const peakDate =
+      chartData.length > 0
+        ? chartData.reduce((max, item) =>
+            item.revenue > max.revenue ? item : max
+          )
+        : null;
+
+    return {
+      success: true,
+      groupBy,
+      dateRange: {
+        start: startDate || event.createdAt,
+        end: endDate || new Date(),
+      },
+      data: chartData,
+      summary: {
+        totalRevenue,
+        totalOrders,
+        totalTickets,
+        avgDailyRevenue,
+        peakDate: peakDate
+          ? {
+              date: peakDate.date,
+              revenue: peakDate.revenue,
+              orders: peakDate.orders,
+            }
+          : null,
+      },
+    };
+  } catch (error) {
+    console.error("[getRevenueAnalytics] Error:", error);
+    throw error;
+  }
+};
+
 module.exports = {
   cleanupOrphanedData,
   getSearchSuggestions,
@@ -1579,4 +1944,6 @@ module.exports = {
   updateEvent,
   updateEventStatus,
   deleteEvent,
+  getDashboardOverview,
+  getRevenueAnalytics,
 };

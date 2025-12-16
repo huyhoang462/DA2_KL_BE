@@ -6,6 +6,7 @@ const ticketTypeSchema = new mongoose.Schema(
     price: { type: Number, required: true, min: 0 },
     quantityTotal: { type: Number, required: true, min: 1 },
     quantitySold: { type: Number, required: true, default: 0 },
+    quantityCheckedIn: { type: Number, required: true, default: 0 },
     minPurchase: { type: Number, required: true, default: 1 },
     maxPurchase: { type: Number, required: true, default: 10 },
     description: { type: String },

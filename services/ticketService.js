@@ -271,13 +271,47 @@ const deleteTicket = async (ticketId) => {
 };
 
 const getTicketTypesByShow = async (showId) => {
-  if (!showId) {
-    const err = new Error("Show ID is required");
+  if (!showId || !mongoose.Types.ObjectId.isValid(showId)) {
+    const err = new Error("Valid Show ID is required");
     err.status = 400;
     throw err;
   }
-  const tickets = await TicketType.find({ show: showId }).lean();
-  return tickets;
+
+  const ticketTypes = await TicketType.find({ show: showId })
+    .sort({ price: 1 })
+    .lean();
+
+  // Tính tổng các chỉ số
+  const totalQuantity = ticketTypes.reduce(
+    (sum, tt) => sum + tt.quantityTotal,
+    0
+  );
+  const totalSold = ticketTypes.reduce((sum, tt) => sum + tt.quantitySold, 0);
+  const totalCheckedIn = ticketTypes.reduce(
+    (sum, tt) => sum + (tt.quantityCheckedIn || 0),
+    0
+  );
+
+  return {
+    totalQuantity,
+    totalSold,
+    totalCheckedIn,
+    totalAvailable: totalQuantity - totalSold,
+    ticketTypes: ticketTypes.map((tt) => ({
+      id: tt._id.toString(),
+      name: tt.name,
+      price: tt.price,
+      quantityTotal: tt.quantityTotal,
+      quantitySold: tt.quantitySold,
+      quantityCheckedIn: tt.quantityCheckedIn || 0,
+      quantityAvailable: tt.quantityTotal - tt.quantitySold,
+      minPurchase: tt.minPurchase,
+      maxPurchase: tt.maxPurchase,
+      description: tt.description,
+      createdAt: tt.createdAt,
+      updatedAt: tt.updatedAt,
+    })),
+  };
 };
 
 module.exports = {

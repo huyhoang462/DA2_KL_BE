@@ -8,6 +8,21 @@ router.get("/search", eventController.handleSearchSuggestions);
 router.get("/search/events", eventController.handleSearchEvents);
 router.get("/", eventController.handleGetAllEvents);
 router.get("/pending", eventController.handleGetPendingEvents);
+
+// Dashboard routes - Đặt trước /:id để tránh conflict
+router.get(
+  "/:id/dashboard/overview",
+  userExtractor,
+  checkEventOwnership,
+  eventController.handleGetDashboardOverview
+);
+router.get(
+  "/:id/dashboard/revenue-chart",
+  userExtractor,
+  checkEventOwnership,
+  eventController.handleGetRevenueAnalytics
+);
+
 router.get("/:id", eventController.handleGetEventById);
 router.put(
   "/:id",

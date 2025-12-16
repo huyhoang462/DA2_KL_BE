@@ -166,3 +166,41 @@ async function resetOrders() {
 //   .catch((error) => {
 //     console.error("Reset failed:", error);
 //   });
+
+/**
+ * Thêm trường quantityCheckedIn vào tất cả TicketType hiện có
+ * Chạy một lần để migration dữ liệu cũ
+ */
+async function addQuantityCheckedInField() {
+  try {
+    console.log("\n🔄 Starting quantityCheckedIn field migration...\n");
+
+    const result = await TicketType.updateMany(
+      { quantityCheckedIn: { $exists: false } }, // Chỉ update những document chưa có field này
+      { $set: { quantityCheckedIn: 0 } }
+    );
+
+    console.log(
+      `✅ Added quantityCheckedIn field to ${result.modifiedCount} ticket types`
+    );
+    console.log("\n🎉 Migration completed successfully!\n");
+
+    return {
+      success: true,
+      modified: result.modifiedCount,
+      matched: result.matchedCount,
+    };
+  } catch (error) {
+    console.error("\n❌ Error adding quantityCheckedIn field:", error);
+    throw error;
+  }
+}
+
+// ⚠️ UNCOMMENT ĐỂ CHẠY MIGRATION (CHỈ CHẠY MỘT LẦN)
+// addQuantityCheckedInField()
+//   .then((result) => {
+//     console.log("Migration result:", result);
+//   })
+//   .catch((error) => {
+//     console.error("Migration failed:", error);
+//   });

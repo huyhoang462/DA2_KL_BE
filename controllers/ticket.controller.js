@@ -3,6 +3,7 @@ const {
   getTicketsByOrderId,
   getTicketById,
   deleteTicket,
+  getTicketTypesByShow,
 } = require("../services/ticketService");
 
 /**
@@ -92,9 +93,29 @@ const handleDeleteTicket = async (req, res, next) => {
   }
 };
 
+/**
+ * Lấy danh sách ticket types của show
+ * GET /api/tickets/show/:showId/ticket-types
+ */
+const handleGetTicketTypesByShow = async (req, res, next) => {
+  try {
+    const { showId } = req.params;
+
+    console.log("[GET TICKET TYPES BY SHOW] Request:", { showId });
+
+    const result = await getTicketTypesByShow(showId);
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("[GET TICKET TYPES BY SHOW] Error:", error);
+    next(error);
+  }
+};
+
 module.exports = {
   handleGetMyTickets,
   handleGetTicketsByOrderId,
   handleGetTicketById,
   handleDeleteTicket,
+  handleGetTicketTypesByShow,
 };

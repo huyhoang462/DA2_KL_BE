@@ -10,6 +10,8 @@ const {
   getPendingEvents,
   updateEventStatus,
   updateEvent,
+  getDashboardOverview,
+  getRevenueAnalytics,
 } = require("../services/eventService");
 
 const handleCleanupData = async (req, res, next) => {
@@ -125,6 +127,55 @@ const handleDeleteEvent = async (req, res, next) => {
   }
 };
 
+/**
+ * Lấy dashboard overview của event
+ * GET /api/events/:id/dashboard/overview
+ */
+const handleGetDashboardOverview = async (req, res, next) => {
+  try {
+    const { id: eventId } = req.params;
+
+    console.log("[GET DASHBOARD OVERVIEW] Request:", { eventId });
+
+    const result = await getDashboardOverview(eventId);
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("[GET DASHBOARD OVERVIEW] Error:", error);
+    next(error);
+  }
+};
+
+/**
+ * Lấy revenue analytics của event
+ * GET /api/events/:id/dashboard/revenue-chart
+ */
+const handleGetRevenueAnalytics = async (req, res, next) => {
+  try {
+    const { id: eventId } = req.params;
+    const { startDate, endDate, groupBy = "day" } = req.query;
+
+    console.log("[GET REVENUE ANALYTICS] Request:", {
+      eventId,
+      startDate,
+      endDate,
+      groupBy,
+    });
+
+    const result = await getRevenueAnalytics(
+      eventId,
+      startDate,
+      endDate,
+      groupBy
+    );
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("[GET REVENUE ANALYTICS] Error:", error);
+    next(error);
+  }
+};
+
 module.exports = {
   handleCleanupData,
   handleSearchSuggestions,
@@ -137,4 +188,6 @@ module.exports = {
   handleUpdateEvent,
   handleUpdateEventStatus,
   handleDeleteEvent,
+  handleGetDashboardOverview,
+  handleGetRevenueAnalytics,
 };
