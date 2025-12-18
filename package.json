@@ -13,6 +13,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@privy-io/server-auth": "^1.32.5",
     "bcryptjs": "^3.0.2",
     "cloudinary": "^2.8.0",
     "cookie-parser": "^1.4.7",
@@ -20,7 +21,8 @@
     "crypto": "^1.0.1",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
-    "jsonwebtoken": "^9.0.2",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
     "moment": "^2.30.1",
     "mongoose": "^8.18.2",
     "ngrok": "^5.0.0-beta.2",
@@ -29,6 +31,7 @@
     "vnpay": "^2.4.4"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10"
+    "nodemon": "^3.1.10",
+    "selfsigned": "^5.2.0"
   }
 }

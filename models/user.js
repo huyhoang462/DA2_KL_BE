@@ -20,6 +20,15 @@ const userSchema = new mongoose.Schema(
     phone: {
       type: String,
     },
+
+    // 👉 Thêm trường walletAddress
+    walletAddress: {
+      type: String,
+      trim: true,
+      unique: true, // nếu mỗi user chỉ có 1 ví (có thể bỏ nếu không cần)
+      sparse: true, // cho phép nhiều user chưa có walletAddress
+    },
+
     role: {
       type: String,
       enum: ["user", "admin", "staff"],
@@ -38,7 +47,7 @@ const userSchema = new mongoose.Schema(
     },
   },
   {
-    timestamps: true, // Tự động thêm createdAt và updatedAt
+    timestamps: true,
   }
 );
 

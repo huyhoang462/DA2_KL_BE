@@ -2,10 +2,96 @@ const User = require("../models/user");
 const bcrypt = require("bcryptjs");
 const Verification = require("../models/verification");
 const jwt = require("jsonwebtoken");
+const fs = require("fs");
+const path = require("path");
 const {
   sendVerificationEmail,
   sendResetPasswordCode,
 } = require("../utils/mailer");
+
+// [PRIVY UPDATE] Helper: đọc RSA private key để ký JWT kiểu RS256
+let cachedPrivyPrivateKey = null;
+
+const loadPrivyPrivateKey = () => {
+  try {
+    if (process.env.PRIVY_PRIVATE_KEY_BASE64) {
+      const pem = Buffer.from(
+        process.env.PRIVY_PRIVATE_KEY_BASE64,
+        "base64"
+      ).toString("utf8");
+      return pem;
+    }
+
+    const keyPath =
+      process.env.PRIVY_PRIVATE_KEY_PATH ||
+      path.join(__dirname, "..", "config", "privy-private.pem");
+
+    if (fs.existsSync(keyPath)) {
+      return fs.readFileSync(keyPath, "utf8");
+    }
+
+    console.error(
+      "[PRIVY] Không tìm thấy private key. Thiết lập PRIVY_PRIVATE_KEY_BASE64 hoặc PRIVY_PRIVATE_KEY_PATH."
+    );
+    return null;
+  } catch (err) {
+    console.error("[PRIVY] Lỗi đọc private key:", err);
+    return null;
+  }
+};
+
+const getPrivyPrivateKey = () => {
+  if (!cachedPrivyPrivateKey) {
+    cachedPrivyPrivateKey = loadPrivyPrivateKey();
+  }
+  return cachedPrivyPrivateKey;
+};
+
+// [PRIVY UPDATE] 1. Hàm helper để tạo Token cho Privy (RS256)
+// userId dùng cho claim `sub`, email (optional) thêm vào payload để Privy map user
+const generatePrivyAuthToken = (userId, email) => {
+  const PRIVY_APP_ID = process.env.PRIVY_APP_ID; // app id của Privy (không dùng để ký nữa)
+  const PRIVY_JWT_AUD = process.env.PRIVY_JWT_AUD; // phải trùng với JWT aud claim trên Privy (shine-ticket-auth)
+  const PRIVY_JWT_ISS = process.env.PRIVY_JWT_ISS; // optional, vì trong Dashboard bạn chưa bật verify iss
+  const privateKey = getPrivyPrivateKey();
+
+  // Theo Dashboard hiện tại: chỉ bắt buộc aud. iss là tùy chọn.
+  if (!PRIVY_APP_ID || !PRIVY_JWT_AUD || !privateKey) {
+    console.error(
+      "[PRIVY] Thiếu cấu hình PRIVY_APP_ID / PRIVY_JWT_AUD hoặc privateKey. Không tạo được privyToken."
+    );
+    return null;
+  }
+
+  const nowInSeconds = Math.floor(Date.now() / 1000);
+  const expiresInSeconds = 60 * 60; // 1 giờ
+
+  const payload = {
+    sub: userId.toString(),
+    aud: PRIVY_JWT_AUD,
+    app_id: PRIVY_APP_ID, // thêm để Privy biết app nào (tuỳ chọn nhưng hữu ích)
+    iat: nowInSeconds,
+    exp: nowInSeconds + expiresInSeconds,
+  };
+
+  if (PRIVY_JWT_ISS) {
+    payload.iss = PRIVY_JWT_ISS;
+  }
+
+  if (email) {
+    payload.email = email;
+  }
+
+  try {
+    const token = jwt.sign(payload, privateKey, {
+      algorithm: "RS256",
+    });
+    return token;
+  } catch (err) {
+    console.error("[PRIVY] Lỗi ký privyToken:", err);
+    return null;
+  }
+};
 
 const login = async ({ email, password }) => {
   if (!email || !password) {
@@ -51,10 +137,13 @@ const login = async ({ email, password }) => {
       expiresIn: "7d",
     }
   );
-
+  // [PRIVY UPDATE] 2. Tạo Privy Token khi đăng nhập thành công
+  // Khi frontend nhận token này, nó sẽ tự động mở lại ví cũ của user này
+  const privyToken = generatePrivyAuthToken(user._id, user.email);
   return {
     accessToken,
     refreshToken,
+    privyToken, // trả về cho frontend
     user: {
       id: user.id,
       email: user.email,
@@ -98,6 +187,7 @@ const refreshToken = async (token) => {
     );
 
     // Trả về Access Token mới
+    // Có thể trả về privyToken mới ở đây nếu cần, nhưng thường chỉ cần lúc login
     return { accessToken: newAccessToken };
   } catch (err) {
     const error = new Error("Invalid refresh token");
@@ -180,8 +270,10 @@ const verifyEmail = async ({ email, otp }) => {
 
   await newUser.save();
   await Verification.findByIdAndDelete(verificationRecord._id);
-
-  return { message: "User created and verified successfully!" };
+  // [PRIVY UPDATE] 3. Tạo Privy Token ngay khi đăng ký thành công
+  // Để frontend có thể tạo ví MỚI ngay lập tức
+  const privyToken = generatePrivyAuthToken(newUser._id, newUser.email);
+  return { message: "User created and verified successfully!", privyToken };
 };
 
 const forgotPassword = async ({ email }) => {
@@ -322,8 +414,35 @@ const editProfile = async ({ userId, fullName, phone }) => {
     },
   };
 };
+// [THÊM MỚI] Hàm xử lý Logic cập nhật ví trong Database
+const syncWallet = async ({ userId, walletAddress }) => {
+  if (!userId || !walletAddress) {
+    const error = new Error("Missing userId or walletAddress");
+    error.status = 400;
+    throw error;
+  }
 
+  // Tìm user và update địa chỉ ví
+  // Sử dụng { new: true } để trả về data mới sau khi update
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { walletAddress: walletAddress },
+    { new: true }
+  );
+
+  if (!user) {
+    const error = new Error("User not found");
+    error.status = 404;
+    throw error;
+  }
+
+  return {
+    message: "Wallet synced successfully",
+    walletAddress: user.walletAddress,
+  };
+};
 module.exports = {
+  syncWallet,
   login,
   refreshToken,
   registerRequest,
