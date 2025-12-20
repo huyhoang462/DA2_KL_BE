@@ -8,15 +8,17 @@ const {
   changePassword,
   editProfile,
   refreshToken,
+  syncWallet,
 } = require("../services/authService");
 
 const handleLogin = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    const { accessToken, refreshToken, user } = await login({
+    const { accessToken, refreshToken, user, privyToken } = await login({
       email,
       password,
     });
+
     res.cookie("jwt", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -28,6 +30,7 @@ const handleLogin = async (req, res, next) => {
     res.status(200).json({
       accessToken,
       user,
+      privyToken,
     });
   } catch (error) {
     next(error);
@@ -125,7 +128,19 @@ const handleEditProfile = async (req, res, next) => {
     next(error);
   }
 };
+// [2] Viết hàm Controller mới
+const handleSyncWallet = async (req, res, next) => {
+  try {
+    // Lấy walletAddress từ body, userId lấy từ token (req.user)
+    const { walletAddress } = req.body;
+    const userId = req.user && req.user.id;
 
+    const result = await syncWallet({ userId, walletAddress });
+    return res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
 module.exports = {
   login: handleLogin,
   refreshToken: handleRefreshToken,
@@ -136,4 +151,5 @@ module.exports = {
   resetPassword: handleResetPassword,
   changePassword: handleChangePassword,
   editProfile: handleEditProfile,
+  syncWallet: handleSyncWallet,
 };

@@ -160,6 +160,21 @@ const getTicketsByOrderId = async (orderId) => {
     })
     .lean();
 
+  const mintedCount = tickets.filter((t) => t.mintStatus === "minted").length;
+  const pendingMintCount = tickets.filter(
+    (t) => t.mintStatus === "pending"
+  ).length;
+  const unmintedCount = tickets.filter(
+    (t) => t.mintStatus === "unminted"
+  ).length;
+  const failedMintCount = tickets.filter(
+    (t) => t.mintStatus === "failed"
+  ).length;
+
+  console.log(
+    `📈 [MINT STATUS] Order ${orderId}: total=${tickets.length}, minted=${mintedCount}, pending=${pendingMintCount}, unminted=${unmintedCount}, failed=${failedMintCount}`
+  );
+
   return tickets.map((ticket) => ({
     id: ticket._id.toString(),
     qrCode: ticket.qrCode,

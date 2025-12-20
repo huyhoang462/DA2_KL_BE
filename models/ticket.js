@@ -36,7 +36,7 @@ const ticketSchema = new mongoose.Schema(
 
     // --- THÔNG TIN NFT (để dành) ---
     blockchainNetwork: { type: String },
-    contractAddress: { type: String },
+    contractAddress: { type: String, unique: true },
     tokenId: { type: String },
     mintStatus: {
       type: String,

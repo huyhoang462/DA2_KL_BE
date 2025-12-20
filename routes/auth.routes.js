@@ -12,5 +12,5 @@ router.post("/verify-reset-code", authController.verifyResetCode);
 router.post("/reset-password", authController.resetPassword);
 router.post("/change-password", userExtractor, authController.changePassword);
 router.put("/edit-profile", userExtractor, authController.editProfile);
-
+router.post("/sync-wallet", userExtractor, authController.syncWallet);
 module.exports = router;
