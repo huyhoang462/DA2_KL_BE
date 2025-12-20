@@ -25,6 +25,8 @@ const orderSchema = new mongoose.Schema(
       default: "pending",
       required: true,
     },
+    walletAddress: { type: String, required: true },
+    txHash: { type: String, unique: true, sparse: true },
     expiresAt: { type: Date, required: true },
   },
   { timestamps: true }

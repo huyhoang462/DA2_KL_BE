@@ -5,7 +5,68 @@ const Show = require("../models/show");
 const Event = require("../models/event");
 const Transaction = require("../models/transaction");
 const Ticket = require("../models/ticket");
+const User = require("../models/user");
 const mongoose = require("mongoose");
+
+// Helper: Hủy order pending và trả lại quantitySold cho TicketType
+const cancelOrderAndReleaseTickets = async (orderId) => {
+  const session = await mongoose.startSession();
+
+  try {
+    await session.startTransaction();
+
+    console.log(`\n[ORDER CLEANUP] Cancelling old pending order ${orderId}...`);
+
+    const order = await Order.findById(orderId).session(session);
+
+    if (!order) {
+      console.warn(`[ORDER CLEANUP] Order ${orderId} not found, skip.`);
+      await session.commitTransaction();
+      return;
+    }
+
+    if (order.status !== "pending") {
+      console.log(
+        `[ORDER CLEANUP] Order ${orderId} status is ${order.status}, not pending. Skip.`
+      );
+      await session.commitTransaction();
+      return;
+    }
+
+    // Đánh dấu order là cancelled
+    order.status = "cancelled";
+    await order.save({ session });
+
+    // Lấy các OrderItem để trả lại số lượng đã reserve
+    const orderItems = await OrderItem.find({ order: orderId }).session(
+      session
+    );
+
+    let releasedCount = 0;
+
+    for (const item of orderItems) {
+      await TicketType.findByIdAndUpdate(
+        item.ticketType,
+        { $inc: { quantitySold: -item.quantity } },
+        { session }
+      );
+      releasedCount += item.quantity;
+    }
+
+    console.log(
+      `[ORDER CLEANUP] Order ${orderId} cancelled, released ${releasedCount} tickets back to inventory.`
+    );
+
+    await session.commitTransaction();
+  } catch (error) {
+    console.error("[ORDER CLEANUP] Error while cancelling order:", error);
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+  } finally {
+    await session.endSession();
+  }
+};
 
 const createOrder = async (orderData, buyerId, retryCount = 0) => {
   const { eventId, showId, items } = orderData;
@@ -29,6 +90,21 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
     !mongoose.Types.ObjectId.isValid(buyerId)
   ) {
     const error = new Error("Invalid ID format");
+    error.status = 400;
+    throw error;
+  }
+
+  // Lấy thông tin user để kiểm tra và lấy walletAddress
+  const buyer = await User.findById(buyerId).select("walletAddress");
+
+  if (!buyer) {
+    const error = new Error("Buyer not found");
+    error.status = 404;
+    throw error;
+  }
+
+  if (!buyer.walletAddress) {
+    const error = new Error("Vui lòng thêm địa chỉ ví trước khi thanh toán.");
     error.status = 400;
     throw error;
   }
@@ -203,6 +279,7 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
         totalAmount,
         status: "pending",
         expiresAt,
+        walletAddress: buyer.walletAddress,
       });
 
       const savedOrder = await newOrder.save({ session });

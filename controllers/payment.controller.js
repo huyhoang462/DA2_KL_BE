@@ -3,6 +3,7 @@ const Order = require("../models/order");
 const OrderItem = require("../models/orderItem");
 const TicketType = require("../models/ticketType");
 const Ticket = require("../models/ticket");
+const { addMintJob } = require("../services/queueService");
 const mongoose = require("mongoose");
 const { createTicketsForOrder } = require("../services/ticketService");
 const transactionService = require("../services/transactionService");
@@ -168,22 +169,23 @@ const handleVnpayReturn = async (req, res) => {
     );
   }
 };
-
 const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
   const session = await mongoose.startSession();
+
+  // Biến dùng để tính toán Mint
+  let totalTicketsToMint = 0;
+  let buyerWallet = "";
 
   try {
     await session.startTransaction();
 
     console.log(`🔄 Processing successful payment for order ${order._id}...`);
-    console.log(`📊 Current order status: ${order.status}`);
 
-    // ✅ KIỂM TRA IDEMPOTENCY - Nếu đã paid rồi thì return luôn
+    // ✅ KIỂM TRA IDEMPOTENCY
     if (order.status === "paid") {
       console.log(`⚠️ Order already paid. Skipping.`);
-      await session.commitTransaction(); // ← Commit trước khi return
+      await session.commitTransaction();
 
-      // Lấy existing data
       const existingTickets = await Ticket.find({ order: order._id });
       const existingItems = await OrderItem.find({ order: order._id });
 
@@ -201,12 +203,14 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
       bankCode,
       paidAt: new Date(),
     };
+    // Nếu trong order có lưu ví thì lấy luôn, nếu không thì để trống
+    if (order.walletAddress) {
+      buyerWallet = order.walletAddress;
+    }
+
     await order.save({ session });
 
-    console.log(`✅ Order ${order._id} marked as PAID`);
-    console.log(`💳 Transaction: ${transactionNo} | Bank: ${bankCode}`);
-
-    // ✅ 2. TẠO TRANSACTION RECORD (dùng service)
+    // 2. TẠO TRANSACTION RECORD
     const transaction = await transactionService.createTransaction(
       {
         orderId: order._id,
@@ -218,7 +222,7 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
       session
     );
 
-    // 3. Kiểm tra OrderItems
+    // 3. Lấy OrderItems (Dùng biến này tính toán luôn, không query lại)
     const existingItems = await OrderItem.find({ order: order._id }).session(
       session
     );
@@ -227,7 +231,16 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
       throw new Error("Order items not found. Cannot create tickets.");
     }
 
-    console.log(`📦 Found ${existingItems.length} existing order items`);
+    // --- TÍNH TỔNG VÉ ĐỂ MINT ---
+    // Sử dụng luôn existingItems, không cần query lại DB
+    totalTicketsToMint = existingItems.reduce(
+      (sum, item) => sum + item.quantity,
+      0
+    );
+
+    console.log(
+      `📊 [MINT CALC] Order ${order._id}: total tickets to mint = ${totalTicketsToMint}`
+    );
 
     // 4. Kiểm tra Tickets đã tồn tại chưa
     const existingTickets = await Ticket.find({ order: order._id }).session(
@@ -235,10 +248,9 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
     );
 
     if (existingTickets.length > 0) {
-      console.log(
-        `⚠️ Tickets already exist (${existingTickets.length}). Skipping creation.`
-      );
       await session.commitTransaction();
+      // Nếu vé đã có trong DB, có thể bạn vẫn muốn thử Mint lại nếu chưa mint?
+      // Nhưng theo logic an toàn, ta return luôn ở đây.
       return {
         tickets: existingTickets,
         orderItems: existingItems,
@@ -246,7 +258,7 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
       };
     }
 
-    // 5. Tạo tickets
+    // 5. Tạo tickets trong DB
     const tickets = await createTicketsForOrder(
       order._id,
       order.buyer,
@@ -255,20 +267,43 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
 
     console.log(`🎫 Created ${tickets.length} tickets`);
 
-    // ✅ COMMIT TRANSACTION
+    // ✅ COMMIT TRANSACTION (Lưu DB thành công rồi mới làm việc khác)
     await session.commitTransaction();
     console.log(`✅ Transaction committed successfully for order ${order._id}`);
 
+    // ============================================================
+    // 👉 ĐOẠN 2: BẮN JOB SANG WORKER
+    // (Đặt ở đây là an toàn nhất: DB đã xong, biến vẫn còn scope)
+    // ============================================================
+    try {
+      if (buyerWallet && totalTicketsToMint > 0) {
+        console.log(
+          `💳 [MINT QUEUE] Kích hoạt Mint NFT cho Order ${order._id} -> Wallet: ${buyerWallet} | Tickets: ${totalTicketsToMint}`
+        );
+        // Gọi hàm queueService
+        await addMintJob(buyerWallet, totalTicketsToMint, order._id.toString());
+      } else {
+        console.warn(
+          `⚠️ Bỏ qua Mint: Không tìm thấy ví hoặc số lượng vé = 0. (Wallet: ${buyerWallet})`
+        );
+      }
+    } catch (queueError) {
+      // Chỉ log lỗi queue, không throw để tránh rollback lại transaction thanh toán
+      console.error(
+        "❌ Lỗi đẩy Job Mint (User đã thanh toán nhưng chưa Mint):",
+        queueError
+      );
+    }
+
+    // ✅ RETURN KẾT QUẢ (Biến tickets, transaction vẫn còn nhìn thấy được)
     return { tickets, orderItems: existingItems, transaction };
   } catch (error) {
     console.error("❌ Error processing successful payment:", error);
 
-    // ✅ KIỂM TRA SESSION TRƯỚC KHI ABORT
     if (session.inTransaction()) {
       await session.abortTransaction();
       console.log("❌ Transaction aborted");
     }
-
     throw error;
   } finally {
     await session.endSession();

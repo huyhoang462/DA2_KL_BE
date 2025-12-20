@@ -6,10 +6,12 @@ const eventRoute = require("./event.routes");
 const payoutMethodRoute = require("./payout.routes");
 const orderRoute = require("./order.routes");
 const paymentRoute = require("./payment.routes");
+const webhookRoutes = require("./webhook.routes");
 const orderItemRoutes = require("./orderItem.routes");
 const ticketRoutes = require("./ticket.routes");
 const transactionRoutes = require("./transaction.routes");
 const staffPermissionRoutes = require("./staffPermission.routes");
+const nftRoutes = require("./nft.routes");
 
 const initRoutes = (app) => {
   app.use("/api/auth", authRoutes);
@@ -20,9 +22,11 @@ const initRoutes = (app) => {
   app.use("/api/payout-methods", payoutMethodRoute);
   app.use("/api/orders", orderRoute);
   app.use("/api/payment", paymentRoute);
+  app.use("/api/webhooks", webhookRoutes);
   app.use("/api/order-items", orderItemRoutes);
   app.use("/api/tickets", ticketRoutes);
   app.use("/api/transactions", transactionRoutes);
   app.use("/api/staff-permissions", staffPermissionRoutes);
+  app.use("/api/nft", nftRoutes);
 };
 module.exports = initRoutes;
