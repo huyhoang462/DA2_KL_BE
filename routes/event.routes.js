@@ -1,5 +1,6 @@
 const router = require("express").Router();
 const eventController = require("../controllers/event.controller");
+const orderController = require("../controllers/order.controller");
 const { userExtractor } = require("../middlewares/authentication");
 const { checkEventOwnership } = require("../middlewares/authorization");
 
@@ -21,6 +22,13 @@ router.get(
   userExtractor,
   checkEventOwnership,
   eventController.handleGetRevenueAnalytics
+);
+
+// Orders management routes - Đặt trước /:id để tránh conflict
+router.get(
+  "/:eventId/orders",
+  userExtractor,
+  orderController.handleGetEventOrders
 );
 
 router.get("/:id", eventController.handleGetEventById);

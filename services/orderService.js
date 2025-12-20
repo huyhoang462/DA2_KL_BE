@@ -7,6 +7,86 @@ const Transaction = require("../models/transaction");
 const Ticket = require("../models/ticket");
 const mongoose = require("mongoose");
 
+/**
+ * Cancel order và release tickets (helper internal - không throw error)
+ * Dùng để cleanup old pending orders khi user tạo order mới
+ * @param {String} orderId - ID của order cần cancel
+ */
+const cancelOrderAndReleaseTickets = async (orderId) => {
+  if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    console.error(`Invalid order ID format: ${orderId}`);
+    return { success: false, message: "Invalid order ID format" };
+  }
+
+  const session = await mongoose.startSession();
+
+  try {
+    await session.startTransaction();
+
+    const order = await Order.findById(orderId).session(session);
+
+    if (!order) {
+      console.log(`Order ${orderId} not found, skipping...`);
+      await session.abortTransaction();
+      return { success: false, message: "Order not found" };
+    }
+
+    // Nếu order đã không phải pending, skip
+    if (order.status !== "pending") {
+      console.log(
+        `Order ${orderId} status is ${order.status}, not pending. Skipping...`
+      );
+      await session.abortTransaction();
+      return {
+        success: false,
+        message: `Order status is ${order.status}, not pending`,
+      };
+    }
+
+    // Update order status
+    order.status = "cancelled";
+    await order.save({ session });
+
+    // Release tickets (trừ lại quantitySold)
+    const orderItems = await OrderItem.find({ order: orderId }).session(
+      session
+    );
+
+    for (const item of orderItems) {
+      await TicketType.findByIdAndUpdate(
+        item.ticketType,
+        { $inc: { quantitySold: -item.quantity } },
+        { session }
+      );
+    }
+
+    await session.commitTransaction();
+
+    console.log(
+      `✅ Cancelled order ${orderId} and released ${orderItems.length} ticket types`
+    );
+
+    return {
+      success: true,
+      message: "Order cancelled successfully",
+      orderId,
+      itemsReleased: orderItems.length,
+    };
+  } catch (error) {
+    await session.abortTransaction();
+    console.error(`Error cancelling order ${orderId}:`, error);
+    
+    // KHÔNG throw error - đây là cleanup function, không nên block main flow
+    return {
+      success: false,
+      message: error.message,
+      orderId,
+    };
+  } finally {
+    await session.endSession();
+  }
+};
+
 const createOrder = async (orderData, buyerId, retryCount = 0) => {
   const { eventId, showId, items } = orderData;
   const maxRetries = 3;
@@ -525,9 +605,522 @@ const getOrdersByUserId = async (userId) => {
   }
 };
 
+/**
+ * Lấy danh sách orders của một event với filters, search, pagination
+ * @param {String} eventId - ID của event
+ * @param {Object} queryParams - Query parameters (search, filters, pagination)
+ * @returns {Object} Orders với pagination
+ */
+const getOrdersByEventId = async (eventId, queryParams = {}) => {
+  if (!mongoose.Types.ObjectId.isValid(eventId)) {
+    const error = new Error("Invalid event ID format");
+    error.status = 400;
+    throw error;
+  }
+
+  try {
+    const {
+      search = "",
+      status = "all",
+      showId = "all",
+      startDate,
+      endDate,
+      page = 1,
+      limit = 20,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+    } = queryParams;
+
+    // 1. Lấy tất cả shows của event
+    const shows = await Show.find({ event: eventId }).lean();
+    const showIds = shows.map((show) => show._id);
+
+    if (showIds.length === 0) {
+      return {
+        orders: [],
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: 0,
+          totalOrders: 0,
+          limit: parseInt(limit),
+        },
+        summary: {
+          total: 0,
+          paid: 0,
+          pending: 0,
+          cancelled: 0,
+          failed: 0,
+          totalRevenue: 0,
+        },
+      };
+    }
+
+    // 2. Lấy ticket types của event
+    const ticketTypes = await TicketType.find({
+      show: { $in: showIds },
+    }).lean();
+    const ticketTypeIds = ticketTypes.map((tt) => tt._id);
+
+    // 3. Lấy order IDs từ OrderItems
+    const orderItemsQuery = { ticketType: { $in: ticketTypeIds } };
+
+    // Filter by show nếu cần
+    if (showId !== "all" && mongoose.Types.ObjectId.isValid(showId)) {
+      const showTicketTypes = ticketTypes
+        .filter((tt) => tt.show.toString() === showId)
+        .map((tt) => tt._id);
+      orderItemsQuery.ticketType = { $in: showTicketTypes };
+    }
+
+    const orderItems = await OrderItem.find(orderItemsQuery)
+      .select("order")
+      .lean();
+    const orderIds = [...new Set(orderItems.map((item) => item.order))];
+
+    if (orderIds.length === 0) {
+      return {
+        orders: [],
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: 0,
+          totalOrders: 0,
+          limit: parseInt(limit),
+        },
+        summary: {
+          total: 0,
+          paid: 0,
+          pending: 0,
+          cancelled: 0,
+          failed: 0,
+          totalRevenue: 0,
+        },
+      };
+    }
+
+    // 4. Build match filter cho orders
+    const matchFilter = {
+      _id: { $in: orderIds.map((id) => new mongoose.Types.ObjectId(id)) },
+    };
+
+    // Filter by status
+    if (status !== "all") {
+      matchFilter.status = status;
+    }
+
+    // Filter by date range
+    if (startDate || endDate) {
+      matchFilter.createdAt = {};
+      if (startDate) {
+        matchFilter.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        matchFilter.createdAt.$lte = new Date(endDate);
+      }
+    }
+
+    // 5. Search filter (search trong buyer name, email, orderCode)
+    let searchFilter = {};
+    if (search && search.trim()) {
+      const searchRegex = new RegExp(search.trim(), "i");
+
+      // Tìm users matching search
+      const matchingUsers = await mongoose
+        .model("User")
+        .find({
+          $or: [{ fullName: searchRegex }, { email: searchRegex }],
+        })
+        .select("_id")
+        .lean();
+
+      const matchingUserIds = matchingUsers.map((u) => u._id);
+
+      // Tìm orders có orderCode matching
+      const ordersWithCode = await Order.find({
+        orderCode: searchRegex,
+        _id: { $in: orderIds },
+      })
+        .select("_id")
+        .lean();
+
+      const orderIdsWithCode = ordersWithCode.map((o) => o._id);
+
+      // Combine: order code OR buyer matched
+      searchFilter = {
+        $or: [
+          { _id: { $in: orderIdsWithCode } },
+          { buyer: { $in: matchingUserIds } },
+        ],
+      };
+    }
+
+    // Combine match filter và search filter
+    const finalMatchFilter = {
+      ...matchFilter,
+      ...(Object.keys(searchFilter).length > 0 ? searchFilter : {}),
+    };
+
+    // 6. Count total matching orders (cho pagination)
+    const totalOrders = await Order.countDocuments(finalMatchFilter);
+
+    // 7. Sorting
+    const sortOptions = {};
+    sortOptions[sortBy] = sortOrder === "asc" ? 1 : -1;
+
+    // 8. Pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // 9. Fetch orders với pagination
+    const orders = await Order.find(finalMatchFilter)
+      .populate({
+        path: "buyer",
+        select: "fullName email phone",
+      })
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    // 10. Lấy order IDs từ results
+    const resultOrderIds = orders.map((o) => o._id);
+
+    // 11. Parallel fetch items và transactions
+    const [items, transactions, tickets] = await Promise.all([
+      OrderItem.find({ order: { $in: resultOrderIds } })
+        .populate({
+          path: "ticketType",
+          populate: {
+            path: "show",
+            select: "name startTime",
+          },
+        })
+        .lean(),
+
+      Transaction.find({ order: { $in: resultOrderIds } })
+        .select("order paymentMethod transactionCode status createdAt")
+        .lean(),
+
+      Ticket.aggregate([
+        { $match: { order: { $in: resultOrderIds } } },
+        { $group: { _id: "$order", count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    // 12. Map items, transactions, tickets to orders
+    const itemsByOrder = {};
+    const transactionsByOrder = {};
+    const ticketCountByOrder = {};
+
+    items.forEach((item) => {
+      const orderId = item.order.toString();
+      if (!itemsByOrder[orderId]) {
+        itemsByOrder[orderId] = [];
+      }
+      itemsByOrder[orderId].push(item);
+    });
+
+    transactions.forEach((txn) => {
+      const orderId = txn.order.toString();
+      if (!transactionsByOrder[orderId]) {
+        transactionsByOrder[orderId] = [];
+      }
+      transactionsByOrder[orderId].push(txn);
+    });
+
+    tickets.forEach((ticket) => {
+      const orderId = ticket._id.toString();
+      ticketCountByOrder[orderId] = ticket.count;
+    });
+
+    // 13. Transform orders
+    const ordersWithDetails = orders.map((order) => {
+      const orderId = order._id.toString();
+      const orderItems = itemsByOrder[orderId] || [];
+
+      // Get show name (từ item đầu tiên, vì 1 order chỉ thuộc 1 show)
+      const showName =
+        orderItems.length > 0 && orderItems[0].ticketType?.show?.name
+          ? orderItems[0].ticketType.show.name
+          : "N/A";
+
+      return {
+        id: orderId,
+        orderCode: order.orderCode,
+        buyer: {
+          id: order.buyer._id.toString(),
+          name: order.buyer.fullName,
+          email: order.buyer.email,
+          phone: order.buyer.phone || null,
+        },
+        showName,
+        ticketCount: ticketCountByOrder[orderId] || 0,
+        totalAmount: order.totalAmount,
+        status: order.status,
+        createdAt: order.createdAt,
+        expiresAt: order.expiresAt,
+        items: orderItems.map((item) => ({
+          ticketTypeName: item.ticketType?.name || "N/A",
+          quantity: item.quantity,
+          price: item.priceAtPurchase,
+        })),
+        transactions: transactionsByOrder[orderId] || [],
+      };
+    });
+
+    // 14. Calculate summary (cho tất cả orders của event, không chỉ page hiện tại)
+    const allOrdersForSummary = await Order.find({
+      _id: { $in: orderIds },
+    }).lean();
+
+    const summary = {
+      total: allOrdersForSummary.length,
+      paid: allOrdersForSummary.filter((o) => o.status === "paid").length,
+      pending: allOrdersForSummary.filter((o) => o.status === "pending").length,
+      cancelled: allOrdersForSummary.filter((o) => o.status === "cancelled")
+        .length,
+      failed: allOrdersForSummary.filter((o) => o.status === "failed").length,
+      totalRevenue: allOrdersForSummary
+        .filter((o) => o.status === "paid")
+        .reduce((sum, o) => sum + o.totalAmount, 0),
+    };
+
+    // 15. Return
+    return {
+      orders: ordersWithDetails,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalOrders / parseInt(limit)),
+        totalOrders,
+        limit: parseInt(limit),
+      },
+      summary,
+    };
+  } catch (error) {
+    console.error("Error in getOrdersByEventId:", error);
+    throw error;
+  }
+};
+
+/**
+ * Lấy chi tiết đầy đủ của một order
+ * @param {String} orderId - ID của order
+ * @returns {Object} Order details
+ */
+const getOrderDetails = async (orderId) => {
+  if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    const error = new Error("Invalid order ID format");
+    error.status = 400;
+    throw error;
+  }
+
+  try {
+    const order = await Order.findById(orderId)
+      .populate({
+        path: "buyer",
+        select: "fullName email phone",
+      })
+      .lean();
+
+    if (!order) {
+      const error = new Error("Order not found");
+      error.status = 404;
+      throw error;
+    }
+
+    // Parallel fetch items, transactions, tickets
+    const [items, transactions, tickets] = await Promise.all([
+      OrderItem.find({ order: orderId })
+        .populate({
+          path: "ticketType",
+          populate: {
+            path: "show",
+            populate: {
+              path: "event",
+              select: "name bannerImageUrl location startDate endDate format",
+            },
+          },
+        })
+        .lean(),
+
+      Transaction.find({ order: orderId }).lean(),
+
+      Ticket.find({ order: orderId })
+        .populate("ticketType")
+        .select("qrCode status checkinAt ticketType")
+        .lean(),
+    ]);
+
+    return {
+      id: order._id.toString(),
+      orderCode: order.orderCode,
+      buyer: {
+        id: order.buyer._id.toString(),
+        name: order.buyer.fullName,
+        email: order.buyer.email,
+        phone: order.buyer.phone || null,
+      },
+      totalAmount: order.totalAmount,
+      status: order.status,
+      expiresAt: order.expiresAt,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      items: items.map((item) => ({
+        ticketTypeId: item.ticketType._id.toString(),
+        ticketTypeName: item.ticketType.name,
+        showName: item.ticketType.show.name,
+        showStartTime: item.ticketType.show.startTime,
+        eventName: item.ticketType.show.event.name,
+        quantity: item.quantity,
+        priceAtPurchase: item.priceAtPurchase,
+        subtotal: item.quantity * item.priceAtPurchase,
+      })),
+      transactions: transactions.map((txn) => ({
+        id: txn._id.toString(),
+        amount: txn.amount,
+        paymentMethod: txn.paymentMethod,
+        transactionCode: txn.transactionCode,
+        status: txn.status,
+        createdAt: txn.createdAt,
+      })),
+      tickets: tickets.map((ticket) => ({
+        id: ticket._id.toString(),
+        qrCode: ticket.qrCode,
+        status: ticket.status,
+        ticketTypeName: ticket.ticketType.name,
+        checkinAt: ticket.checkinAt,
+      })),
+    };
+  } catch (error) {
+    console.error("Error in getOrderDetails:", error);
+    throw error;
+  }
+};
+
+/**
+ * Cancel order và release tickets
+ * @param {String} orderId - ID của order
+ * @returns {Object} Success message
+ */
+const cancelOrder = async (orderId) => {
+  if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    const error = new Error("Invalid order ID format");
+    error.status = 400;
+    throw error;
+  }
+
+  const session = await mongoose.startSession();
+
+  try {
+    await session.startTransaction();
+
+    const order = await Order.findById(orderId).session(session);
+
+    if (!order) {
+      const error = new Error("Order not found");
+      error.status = 404;
+      throw error;
+    }
+
+    // Chỉ cancel được order pending
+    if (order.status !== "pending") {
+      const error = new Error(
+        `Cannot cancel order with status: ${order.status}`
+      );
+      error.status = 400;
+      throw error;
+    }
+
+    // Update order status
+    order.status = "cancelled";
+    await order.save({ session });
+
+    // Release tickets
+    const orderItems = await OrderItem.find({ order: orderId }).session(
+      session
+    );
+
+    for (const item of orderItems) {
+      await TicketType.findByIdAndUpdate(
+        item.ticketType,
+        { $inc: { quantitySold: -item.quantity } },
+        { session }
+      );
+    }
+
+    await session.commitTransaction();
+
+    return {
+      success: true,
+      message: "Order cancelled successfully",
+      orderId,
+    };
+  } catch (error) {
+    await session.abortTransaction();
+    console.error("Error in cancelOrder:", error);
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+};
+
+/**
+ * Resend payment link (giả định - cần implement email service)
+ * @param {String} orderId - ID của order
+ * @returns {Object} Success message
+ */
+const resendPaymentLink = async (orderId) => {
+  if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    const error = new Error("Invalid order ID format");
+    error.status = 400;
+    throw error;
+  }
+
+  try {
+    const order = await Order.findById(orderId).populate("buyer");
+
+    if (!order) {
+      const error = new Error("Order not found");
+      error.status = 404;
+      throw error;
+    }
+
+    // Chỉ resend cho order pending
+    if (order.status !== "pending") {
+      const error = new Error(
+        "Can only resend payment link for pending orders"
+      );
+      error.status = 400;
+      throw error;
+    }
+
+    // Check nếu order đã hết hạn
+    if (order.expiresAt < new Date()) {
+      const error = new Error("Order has expired");
+      error.status = 400;
+      throw error;
+    }
+
+    // TODO: Implement email sending
+    // await sendPaymentEmail(order.buyer.email, orderId, paymentUrl);
+
+    return {
+      success: true,
+      message: "Payment link sent successfully",
+      orderId,
+      email: order.buyer.email,
+    };
+  } catch (error) {
+    console.error("Error in resendPaymentLink:", error);
+    throw error;
+  }
+};
+
 module.exports = {
   createOrder,
   getOrderStatus,
   getOrdersByUserId,
   cleanupExpiredOrders,
+  getOrdersByEventId,
+  getOrderDetails,
+  cancelOrder,
+  resendPaymentLink,
 };

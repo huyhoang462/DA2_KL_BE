@@ -12,6 +12,13 @@ router.get(
   ticketController.handleGetTicketTypesByShow
 );
 
+// Lấy tất cả tickets của show (cho quản lý check-in)
+router.get(
+  "/show/:showId/tickets",
+  userExtractor,
+  ticketController.handleGetTicketsByShow
+);
+
 // Lấy tickets theo order ID
 router.get(
   "/order/:orderId",

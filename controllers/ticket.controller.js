@@ -4,6 +4,7 @@ const {
   getTicketById,
   deleteTicket,
   getTicketTypesByShow,
+  getTicketsByShowId,
 } = require("../services/ticketService");
 
 /**
@@ -112,10 +113,44 @@ const handleGetTicketTypesByShow = async (req, res, next) => {
   }
 };
 
+/**
+ * Lấy tất cả tickets của một show (cho quản lý check-in)
+ * GET /api/shows/:showId/tickets
+ */
+const handleGetTicketsByShow = async (req, res, next) => {
+  try {
+    const { showId } = req.params;
+    const { status, ticketTypeId, search, page, limit } = req.query;
+
+    console.log("[GET TICKETS BY SHOW] Request:", {
+      showId,
+      status,
+      ticketTypeId,
+      search,
+      page,
+      limit,
+    });
+
+    const result = await getTicketsByShowId(showId, {
+      status,
+      ticketTypeId,
+      search,
+      page,
+      limit,
+    });
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("[GET TICKETS BY SHOW] Error:", error);
+    next(error);
+  }
+};
+
 module.exports = {
   handleGetMyTickets,
   handleGetTicketsByOrderId,
   handleGetTicketById,
   handleDeleteTicket,
   handleGetTicketTypesByShow,
+  handleGetTicketsByShow,
 };

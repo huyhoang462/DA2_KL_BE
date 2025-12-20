@@ -10,6 +10,7 @@ const orderItemRoutes = require("./orderItem.routes");
 const ticketRoutes = require("./ticket.routes");
 const transactionRoutes = require("./transaction.routes");
 const staffPermissionRoutes = require("./staffPermission.routes");
+const homeRoutes = require("./home.routes");
 
 const initRoutes = (app) => {
   app.use("/api/auth", authRoutes);
@@ -24,5 +25,6 @@ const initRoutes = (app) => {
   app.use("/api/tickets", ticketRoutes);
   app.use("/api/transactions", transactionRoutes);
   app.use("/api/staff-permissions", staffPermissionRoutes);
+  app.use("/api/home", homeRoutes);
 };
 module.exports = initRoutes;

@@ -314,6 +314,188 @@ const getTicketTypesByShow = async (showId) => {
   };
 };
 
+/**
+ * Lấy tất cả tickets của một show (cho quản lý check-in)
+ * @param {String} showId - ID của show
+ * @param {Object} filters - { status, ticketTypeId, search, page, limit }
+ */
+const getTicketsByShowId = async (showId, filters = {}) => {
+  if (!showId || !mongoose.Types.ObjectId.isValid(showId)) {
+    const err = new Error("Valid Show ID is required");
+    err.status = 400;
+    throw err;
+  }
+
+  const { status, ticketTypeId, search, page = 1, limit = 50 } = filters;
+
+  // Build match conditions
+  const matchConditions = {};
+
+  // Filter by status
+  if (status) {
+    matchConditions.status = status;
+  }
+
+  // Filter by ticket type
+  if (ticketTypeId && mongoose.Types.ObjectId.isValid(ticketTypeId)) {
+    matchConditions.ticketType = new mongoose.Types.ObjectId(ticketTypeId);
+  }
+
+  // Aggregation pipeline
+  const pipeline = [
+    // Stage 1: Lookup TicketType
+    {
+      $lookup: {
+        from: "tickettypes",
+        localField: "ticketType",
+        foreignField: "_id",
+        as: "ticketType",
+      },
+    },
+    {
+      $unwind: "$ticketType",
+    },
+
+    // Stage 2: Filter by show
+    {
+      $match: {
+        "ticketType.show": new mongoose.Types.ObjectId(showId),
+        ...matchConditions,
+      },
+    },
+
+    // Stage 3: Lookup Order
+    {
+      $lookup: {
+        from: "orders",
+        localField: "order",
+        foreignField: "_id",
+        as: "order",
+      },
+    },
+    {
+      $unwind: "$order",
+    },
+
+    // Stage 4: Lookup Owner (User)
+    {
+      $lookup: {
+        from: "users",
+        localField: "owner",
+        foreignField: "_id",
+        as: "owner",
+      },
+    },
+    {
+      $unwind: "$owner",
+    },
+
+    // Stage 5: Search filter (qrCode, owner name, order code)
+    ...(search
+      ? [
+          {
+            $match: {
+              $or: [
+                { qrCode: { $regex: search, $options: "i" } },
+                { "owner.fullName": { $regex: search, $options: "i" } },
+                { "order.orderCode": { $regex: search, $options: "i" } },
+              ],
+            },
+          },
+        ]
+      : []),
+
+    // Stage 6: Sort (checkinAt DESC, then createdAt DESC)
+    {
+      $sort: {
+        checkinAt: -1,
+        createdAt: -1,
+      },
+    },
+
+    // Stage 7: Facet for pagination
+    {
+      $facet: {
+        metadata: [{ $count: "total" }],
+        data: [
+          { $skip: (parseInt(page) - 1) * parseInt(limit) },
+          { $limit: parseInt(limit) },
+          {
+            $project: {
+              _id: 1,
+              qrCode: 1,
+              status: 1,
+              checkinAt: 1,
+              lastCheckOutAt: 1,
+              createdAt: 1,
+              updatedAt: 1,
+              ticketType: {
+                _id: 1,
+                name: 1,
+                price: 1,
+              },
+              order: {
+                _id: 1,
+                orderCode: 1,
+                status: 1,
+                totalAmount: 1,
+              },
+              owner: {
+                _id: 1,
+                fullName: 1,
+                email: 1,
+                phone: 1,
+              },
+            },
+          },
+        ],
+      },
+    },
+  ];
+
+  const results = await Ticket.aggregate(pipeline);
+
+  const tickets = results[0]?.data || [];
+  const total = results[0]?.metadata[0]?.total || 0;
+  const totalPages = Math.ceil(total / parseInt(limit));
+
+  return {
+    success: true,
+    data: tickets.map((ticket) => ({
+      id: ticket._id.toString(),
+      qrCode: ticket.qrCode,
+      status: ticket.status,
+      checkinAt: ticket.checkinAt,
+      lastCheckOutAt: ticket.lastCheckOutAt,
+      createdAt: ticket.createdAt,
+      updatedAt: ticket.updatedAt,
+      ticketType: {
+        id: ticket.ticketType._id.toString(),
+        name: ticket.ticketType.name,
+        price: ticket.ticketType.price,
+      },
+      order: {
+        id: ticket.order._id.toString(),
+        orderCode: ticket.order.orderCode,
+        status: ticket.order.status,
+        totalAmount: ticket.order.totalAmount,
+      },
+      owner: {
+        id: ticket.owner._id.toString(),
+        fullName: ticket.owner.fullName,
+        email: ticket.owner.email,
+        phone: ticket.owner.phone,
+      },
+    })),
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      totalPages,
+    },
+  };
+};
+
 module.exports = {
   createTicketsForOrder,
   getTicketsByUserId,
@@ -321,4 +503,5 @@ module.exports = {
   getTicketById,
   deleteTicket,
   getTicketTypesByShow,
+  getTicketsByShowId,
 };
