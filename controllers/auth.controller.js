@@ -19,6 +19,14 @@ const handleLogin = async (req, res, next) => {
       password,
     });
 
+    // Log access token sau khi đăng nhập thành công (phục vụ debug check-in)
+    console.log(
+      "[AUTH LOGIN SUCCESS] user=%s role=%s accessToken=%s",
+      user.id,
+      user.role,
+      accessToken
+    );
+
     res.cookie("jwt", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

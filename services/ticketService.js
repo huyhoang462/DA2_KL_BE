@@ -39,6 +39,14 @@ const createTicketsForOrder = async (orderId, ownerId, session = null) => {
     for (let i = 0; i < item.quantity; i++) {
       const qrCode = generateQRCode(orderId, item.ticketType._id, i);
 
+      console.log(
+        "[QR GENERATE] order=%s ticketType=%s index=%d qr=%s",
+        orderId,
+        item.ticketType._id.toString(),
+        i,
+        qrCode
+      );
+
       tickets.push({
         ticketType: item.ticketType._id,
         order: orderId,
@@ -63,7 +71,18 @@ const createTicketsForOrder = async (orderId, ownerId, session = null) => {
 const generateQRCode = (orderId, ticketTypeId, index) => {
   const timestamp = Date.now();
   const random = crypto.randomBytes(8).toString("hex");
-  return `TICKET-${orderId}-${ticketTypeId}-${index}-${timestamp}-${random}`;
+  const qr = `TICKET-${orderId}-${ticketTypeId}-${index}-${timestamp}-${random}`;
+
+  // Log mức debug cho quá trình sinh QR (không in dữ liệu nhạy cảm)
+  console.log(
+    "[QR BUILD] base=order:%s-ticketType:%s-index:%d ts=%d",
+    orderId,
+    ticketTypeId.toString(),
+    index,
+    timestamp
+  );
+
+  return qr;
 };
 
 /**

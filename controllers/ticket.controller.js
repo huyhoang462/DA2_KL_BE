@@ -13,7 +13,6 @@ const handleGetMyTickets = async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    console.log("[GET MY TICKETS] Request:", { userId });
 
     const tickets = await getTicketsByUserId(userId);
 
