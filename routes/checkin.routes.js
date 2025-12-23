@@ -5,6 +5,6 @@ const { requireAdmin } = require("../middlewares/authorization");
 
 // POST /api/check-in/verify
 // Body: { ticketId, walletAddress, timestamp, signature }
-router.post("/verify", userExtractor, requireAdmin, verifyCheckIn);
+router.post("/verify", userExtractor, verifyCheckIn);
 
 module.exports = router;

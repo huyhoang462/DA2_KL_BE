@@ -12,6 +12,8 @@ const ticketRoutes = require("./ticket.routes");
 const transactionRoutes = require("./transaction.routes");
 const staffPermissionRoutes = require("./staffPermission.routes");
 const nftRoutes = require("./nft.routes");
+const homeRoutes = require("./home.routes");
+const checkinRoutes = require("./checkin.routes");
 
 const initRoutes = (app) => {
   app.use("/api/auth", authRoutes);

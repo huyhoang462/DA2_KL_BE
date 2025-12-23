@@ -78,6 +78,13 @@ router.get(
   staffPermissionController.handleGetEventsByStaff
 );
 
+// Staff xem danh sách shows (kèm thông tin event) mà mình được phân công
+router.get(
+  "/my-shows",
+  userExtractor,
+  staffPermissionController.handleGetShowsByStaff
+);
+
 // Kiểm tra quyền của staff với event (staff tự kiểm tra)
 router.get(
   "/check/:eventId",
@@ -92,6 +99,13 @@ router.get(
   "/staff/:staffId",
   userExtractor,
   staffPermissionController.handleGetEventsByStaff
+);
+
+// Xem danh sách shows của một staff cụ thể (admin/organizer)
+router.get(
+  "/staff/:staffId/shows",
+  userExtractor,
+  staffPermissionController.handleGetShowsByStaff
 );
 
 // Kiểm tra quyền của staff khác (admin/organizer)

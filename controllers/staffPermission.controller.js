@@ -7,6 +7,7 @@ const {
   removeStaffFromMultipleEvents,
   getStaffsByEvent,
   getEventsByStaff,
+  getShowsByStaff,
   checkStaffPermission,
   removeAllStaffFromEvent,
 } = require("../services/staffPermissionService");
@@ -298,6 +299,50 @@ const handleRemoveAllStaff = async (req, res, next) => {
   }
 };
 
+/**
+ * Lấy danh sách shows mà staff được phân công (dùng cho App)
+ * GET /api/staff-permissions/my-shows (staff tự xem)
+ * GET /api/staff-permissions/staff/:staffId/shows (admin/organizer)
+ */
+const handleGetShowsByStaff = async (req, res, next) => {
+  try {
+    const { staffId } = req.params;
+    const { page = 1, limit = 6 } = req.query;
+    const currentUserId = req.user.id;
+    const currentUserRole = req.user.role;
+
+    const targetStaffId = staffId || currentUserId;
+
+    if (
+      targetStaffId !== currentUserId &&
+      currentUserRole !== "admin" &&
+      currentUserRole !== "user"
+    ) {
+      const error = new Error(
+        "You don't have permission to view this staff's shows"
+      );
+      error.status = 403;
+      throw error;
+    }
+
+    const { shows, pagination } = await getShowsByStaff(
+      targetStaffId,
+      Number(page) || 1,
+      Number(limit) || 6
+    );
+
+    res.status(200).json({
+      success: true,
+      total: pagination.totalItems,
+      pagination,
+      shows,
+    });
+  } catch (error) {
+    console.error("[GET SHOWS BY STAFF] Error:", error);
+    next(error);
+  }
+};
+
 module.exports = {
   handleAssignStaff,
   handleAssignMultipleStaff,
@@ -309,4 +354,5 @@ module.exports = {
   handleGetEventsByStaff,
   handleCheckPermission,
   handleRemoveAllStaff,
+  handleGetShowsByStaff,
 };

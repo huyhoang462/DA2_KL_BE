@@ -1,7 +1,9 @@
 const StaffPermission = require("../models/staffPermission");
 const User = require("../models/user");
 const Event = require("../models/event");
+const Show = require("../models/show");
 const mongoose = require("mongoose");
+const { createPaginationMetadata } = require("../utils/pagination");
 
 /**
  * Phân công staff cho event
@@ -532,6 +534,61 @@ const getEventsByStaff = async (staffId) => {
 };
 
 /**
+ * Lấy danh sách các show mà staff được phân công (thông qua các event)
+ * Trả về thông tin show + thông tin cơ bản của event (tên, bannerImage)
+ * @param {String} staffId - ID của staff
+ * @param {number} page - Trang hiện tại
+ * @param {number} limit - Số show mỗi trang
+ * @returns {{ shows: Array, pagination: Object }}
+ */
+const getShowsByStaff = async (staffId, page = 1, limit = 6) => {
+  if (!mongoose.Types.ObjectId.isValid(staffId)) {
+    const error = new Error("Invalid staff ID format");
+    error.status = 400;
+    throw error;
+  }
+
+  try {
+    const eventIds = await getEventsByStaff(staffId);
+
+    if (!eventIds.length) {
+      const emptyPagination = createPaginationMetadata(0, page, limit);
+      return { shows: [], pagination: emptyPagination };
+    }
+
+    const filter = { event: { $in: eventIds } };
+
+    const totalItems = await Show.countDocuments(filter);
+
+    const { skip, itemsPerPage } = createPaginationMetadata(0, page, limit);
+
+    const shows = await Show.find(filter)
+      .populate({ path: "event", select: "name bannerImageUrl" })
+      .sort({ startTime: 1 })
+      .skip(skip)
+      .limit(itemsPerPage)
+      .lean();
+
+    const mappedShows = shows.map((show) => ({
+      showId: show._id.toString(),
+      showName: show.name,
+      startTime: show.startTime,
+      endTime: show.endTime,
+      eventId: show.event?._id?.toString(),
+      eventName: show.event?.name,
+      eventBannerImageUrl: show.event?.bannerImageUrl,
+    }));
+
+    const pagination = createPaginationMetadata(totalItems, page, itemsPerPage);
+
+    return { shows: mappedShows, pagination };
+  } catch (error) {
+    console.error("Error in getShowsByStaff:", error);
+    throw error;
+  }
+};
+
+/**
  * Kiểm tra xem staff có quyền với event không
  * @param {String} staffId - ID của staff
  * @param {String} eventId - ID của event
@@ -613,6 +670,7 @@ module.exports = {
   removeStaffFromMultipleEvents,
   getStaffsByEvent,
   getEventsByStaff,
+  getShowsByStaff,
   checkStaffPermission,
   removeAllStaffFromEvent,
 };
