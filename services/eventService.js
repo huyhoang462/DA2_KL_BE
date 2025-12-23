@@ -1932,6 +1932,609 @@ const getRevenueAnalytics = async (
   }
 };
 
+/**
+ * HOME PAGE APIs - Phase 1
+ */
+
+/**
+ * Increment view count
+ */
+const incrementEventView = async (eventId) => {
+  if (!mongoose.Types.ObjectId.isValid(eventId)) {
+    const error = new Error("Invalid event ID");
+    error.status = 400;
+    throw error;
+  }
+
+  await Event.findByIdAndUpdate(eventId, { $inc: { views: 1 } });
+
+  return { success: true };
+};
+
+/**
+ * Get featured events for banner (5 events)
+ */
+const getFeaturedEvents = async () => {
+  const now = new Date();
+
+  const events = await Event.find({
+    featured: true,
+    featuredUntil: { $gte: now },
+    status: { $in: ["upcoming", "ongoing"] },
+  })
+    .sort({ featuredOrder: 1 })
+    .limit(5)
+    .populate("category", "name")
+    .lean();
+
+  // Get min price for each event
+  const eventsWithPrice = await Promise.all(
+    events.map(async (event) => {
+      const shows = await Show.find({ event: event._id }).select("_id");
+      const showIds = shows.map((s) => s._id);
+
+      const minPriceResult = await TicketType.aggregate([
+        { $match: { show: { $in: showIds } } },
+        { $group: { _id: null, minPrice: { $min: "$price" } } },
+      ]);
+
+      return {
+        id: event._id.toString(),
+        name: event.name,
+        bannerImageUrl: event.bannerImageUrl,
+        startDate: event.startDate,
+        location: event.location,
+        format: event.format,
+        lowestPrice: minPriceResult[0]?.minPrice || null,
+        category: event.category
+          ? {
+              id: event.category._id.toString(),
+              name: event.category.name,
+            }
+          : null,
+        views: event.views,
+      };
+    })
+  );
+
+  return eventsWithPrice;
+};
+
+/**
+ * Get events by category
+ */
+const getEventsByCategory = async (categoryId, limit = 12) => {
+  if (!mongoose.Types.ObjectId.isValid(categoryId)) {
+    const error = new Error("Invalid category ID");
+    error.status = 400;
+    throw error;
+  }
+
+  const aggregationPipeline = [
+    {
+      $match: {
+        category: new mongoose.Types.ObjectId(categoryId),
+        status: { $in: ["upcoming", "ongoing"] },
+      },
+    },
+    {
+      $lookup: {
+        from: "shows",
+        localField: "_id",
+        foreignField: "event",
+        as: "shows",
+      },
+    },
+    {
+      $lookup: {
+        from: "tickettypes",
+        localField: "shows._id",
+        foreignField: "show",
+        as: "tickets",
+      },
+    },
+    {
+      $lookup: {
+        from: "categories",
+        localField: "category",
+        foreignField: "_id",
+        as: "category",
+      },
+    },
+    {
+      $unwind: {
+        path: "$category",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $addFields: {
+        minPrice: { $min: "$tickets.price" },
+      },
+    },
+    {
+      $sort: { startDate: 1 },
+    },
+    {
+      $limit: parseInt(limit, 10),
+    },
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        bannerImageUrl: 1,
+        startDate: 1,
+        location: 1,
+        format: 1,
+        minPrice: 1,
+        views: 1,
+        category: {
+          _id: 1,
+          name: 1,
+        },
+      },
+    },
+  ];
+
+  const events = await Event.aggregate(aggregationPipeline);
+
+  return events.map((event) => ({
+    id: event._id.toString(),
+    name: event.name,
+    bannerImageUrl: event.bannerImageUrl,
+    startDate: event.startDate,
+    location: event.location,
+    format: event.format,
+    lowestPrice: event.minPrice,
+    views: event.views || 0,
+    category: event.category
+      ? {
+          id: event.category._id.toString(),
+          name: event.category.name,
+        }
+      : null,
+  }));
+};
+
+/**
+ * Get new events (12 latest)
+ */
+const getNewEvents = async (limit = 12) => {
+  const aggregationPipeline = [
+    {
+      $match: {
+        status: { $in: ["upcoming", "ongoing"] },
+      },
+    },
+    {
+      $lookup: {
+        from: "shows",
+        localField: "_id",
+        foreignField: "event",
+        as: "shows",
+      },
+    },
+    {
+      $lookup: {
+        from: "tickettypes",
+        localField: "shows._id",
+        foreignField: "show",
+        as: "tickets",
+      },
+    },
+    {
+      $lookup: {
+        from: "categories",
+        localField: "category",
+        foreignField: "_id",
+        as: "category",
+      },
+    },
+    {
+      $unwind: {
+        path: "$category",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $addFields: {
+        minPrice: { $min: "$tickets.price" },
+      },
+    },
+    {
+      $sort: { createdAt: -1 },
+    },
+    {
+      $limit: parseInt(limit, 10),
+    },
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        bannerImageUrl: 1,
+        startDate: 1,
+        location: 1,
+        format: 1,
+        minPrice: 1,
+        views: 1,
+        createdAt: 1,
+        category: {
+          _id: 1,
+          name: 1,
+        },
+      },
+    },
+  ];
+
+  const events = await Event.aggregate(aggregationPipeline);
+
+  return events.map((event) => ({
+    id: event._id.toString(),
+    name: event.name,
+    bannerImageUrl: event.bannerImageUrl,
+    startDate: event.startDate,
+    location: event.location,
+    format: event.format,
+    lowestPrice: event.minPrice,
+    views: event.views || 0,
+    createdAt: event.createdAt,
+    category: event.category
+      ? {
+          id: event.category._id.toString(),
+          name: event.category.name,
+        }
+      : null,
+  }));
+};
+
+/**
+ * Get events this weekend
+ */
+const getThisWeekendEvents = async (limit = 12) => {
+  // Tính toán thứ 6 và Chủ nhật của tuần này
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
+
+  // Tính thứ 6 (Friday) của tuần này
+  const daysUntilFriday = dayOfWeek <= 5 ? 5 - dayOfWeek : 7 - dayOfWeek + 5;
+  const friday = new Date(now);
+  friday.setDate(now.getDate() + daysUntilFriday);
+  friday.setHours(0, 0, 0, 0);
+
+  // Tính Chủ nhật (Sunday) của tuần này
+  const sunday = new Date(friday);
+  sunday.setDate(friday.getDate() + 2);
+  sunday.setHours(23, 59, 59, 999);
+
+  const aggregationPipeline = [
+    {
+      $match: {
+        status: { $in: ["upcoming", "ongoing"] },
+        startDate: {
+          $gte: friday,
+          $lte: sunday,
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: "shows",
+        localField: "_id",
+        foreignField: "event",
+        as: "shows",
+      },
+    },
+    {
+      $lookup: {
+        from: "tickettypes",
+        localField: "shows._id",
+        foreignField: "show",
+        as: "tickets",
+      },
+    },
+    {
+      $lookup: {
+        from: "categories",
+        localField: "category",
+        foreignField: "_id",
+        as: "category",
+      },
+    },
+    {
+      $unwind: {
+        path: "$category",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $addFields: {
+        minPrice: { $min: "$tickets.price" },
+      },
+    },
+    {
+      $sort: { startDate: 1 },
+    },
+    {
+      $limit: parseInt(limit, 10),
+    },
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        bannerImageUrl: 1,
+        startDate: 1,
+        location: 1,
+        format: 1,
+        minPrice: 1,
+        views: 1,
+        category: {
+          _id: 1,
+          name: 1,
+        },
+      },
+    },
+  ];
+
+  const events = await Event.aggregate(aggregationPipeline);
+
+  return events.map((event) => ({
+    id: event._id.toString(),
+    name: event.name,
+    bannerImageUrl: event.bannerImageUrl,
+    startDate: event.startDate,
+    location: event.location,
+    format: event.format,
+    lowestPrice: event.minPrice,
+    views: event.views || 0,
+    category: event.category
+      ? {
+          id: event.category._id.toString(),
+          name: event.category.name,
+        }
+      : null,
+  }));
+};
+
+/**
+ * Get trending events (by views in last 7 days)
+ */
+const getTrendingEvents = async (limit = 12) => {
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  const aggregationPipeline = [
+    {
+      $match: {
+        status: { $in: ["upcoming", "ongoing"] },
+        createdAt: { $gte: sevenDaysAgo },
+      },
+    },
+    {
+      $lookup: {
+        from: "shows",
+        localField: "_id",
+        foreignField: "event",
+        as: "shows",
+      },
+    },
+    {
+      $lookup: {
+        from: "tickettypes",
+        localField: "shows._id",
+        foreignField: "show",
+        as: "tickets",
+      },
+    },
+    {
+      $lookup: {
+        from: "categories",
+        localField: "category",
+        foreignField: "_id",
+        as: "category",
+      },
+    },
+    {
+      $unwind: {
+        path: "$category",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $addFields: {
+        minPrice: { $min: "$tickets.price" },
+      },
+    },
+    {
+      $sort: { views: -1, startDate: 1 },
+    },
+    {
+      $limit: parseInt(limit, 10),
+    },
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        bannerImageUrl: 1,
+        startDate: 1,
+        location: 1,
+        format: 1,
+        minPrice: 1,
+        views: 1,
+        category: {
+          _id: 1,
+          name: 1,
+        },
+      },
+    },
+  ];
+
+  const events = await Event.aggregate(aggregationPipeline);
+
+  return events.map((event) => ({
+    id: event._id.toString(),
+    name: event.name,
+    bannerImageUrl: event.bannerImageUrl,
+    startDate: event.startDate,
+    location: event.location,
+    format: event.format,
+    lowestPrice: event.minPrice,
+    views: event.views || 0,
+    category: event.category
+      ? {
+          id: event.category._id.toString(),
+          name: event.category.name,
+        }
+      : null,
+  }));
+};
+
+/**
+ * Get selling fast events (quantitySold > 70% quantityTotal)
+ */
+const getSellingFastEvents = async (limit = 12) => {
+  // Get all ticket types với sellout >= 70%
+  const ticketTypes = await TicketType.aggregate([
+    {
+      $match: {
+        quantitySold: { $gt: 0 },
+        $expr: {
+          $gte: [{ $divide: ["$quantitySold", "$quantityTotal"] }, 0.7],
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: "shows",
+        localField: "show",
+        foreignField: "_id",
+        as: "show",
+      },
+    },
+    {
+      $unwind: "$show",
+    },
+    {
+      $group: {
+        _id: "$show.event",
+        totalSold: { $sum: "$quantitySold" },
+        totalQuantity: { $sum: "$quantityTotal" },
+        selloutPercentage: {
+          $avg: { $divide: ["$quantitySold", "$quantityTotal"] },
+        },
+      },
+    },
+    {
+      $sort: { selloutPercentage: -1 },
+    },
+    {
+      $limit: parseInt(limit, 10),
+    },
+  ]);
+
+  const eventIds = ticketTypes.map((tt) => tt._id);
+
+  if (eventIds.length === 0) {
+    return [];
+  }
+
+  const aggregationPipeline = [
+    {
+      $match: {
+        _id: { $in: eventIds },
+        status: { $in: ["upcoming", "ongoing"] },
+      },
+    },
+    {
+      $lookup: {
+        from: "shows",
+        localField: "_id",
+        foreignField: "event",
+        as: "shows",
+      },
+    },
+    {
+      $lookup: {
+        from: "tickettypes",
+        localField: "shows._id",
+        foreignField: "show",
+        as: "tickets",
+      },
+    },
+    {
+      $lookup: {
+        from: "categories",
+        localField: "category",
+        foreignField: "_id",
+        as: "category",
+      },
+    },
+    {
+      $unwind: {
+        path: "$category",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $addFields: {
+        minPrice: { $min: "$tickets.price" },
+        totalSold: { $sum: "$tickets.quantitySold" },
+        totalQuantity: { $sum: "$tickets.quantityTotal" },
+        selloutPercentage: {
+          $multiply: [
+            {
+              $divide: [
+                { $sum: "$tickets.quantitySold" },
+                { $sum: "$tickets.quantityTotal" },
+              ],
+            },
+            100,
+          ],
+        },
+      },
+    },
+    {
+      $sort: { selloutPercentage: -1 },
+    },
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        bannerImageUrl: 1,
+        startDate: 1,
+        location: 1,
+        format: 1,
+        minPrice: 1,
+        views: 1,
+        selloutPercentage: 1,
+        category: {
+          _id: 1,
+          name: 1,
+        },
+      },
+    },
+  ];
+
+  const events = await Event.aggregate(aggregationPipeline);
+
+  return events.map((event) => ({
+    id: event._id.toString(),
+    name: event.name,
+    bannerImageUrl: event.bannerImageUrl,
+    startDate: event.startDate,
+    location: event.location,
+    format: event.format,
+    lowestPrice: event.minPrice,
+    views: event.views || 0,
+    selloutPercentage: Math.round(event.selloutPercentage || 0),
+    category: event.category
+      ? {
+          id: event.category._id.toString(),
+          name: event.category.name,
+        }
+      : null,
+  }));
+};
+
 module.exports = {
   cleanupOrphanedData,
   getSearchSuggestions,
@@ -1946,4 +2549,12 @@ module.exports = {
   deleteEvent,
   getDashboardOverview,
   getRevenueAnalytics,
+  // Home page APIs
+  incrementEventView,
+  getFeaturedEvents,
+  getEventsByCategory,
+  getNewEvents,
+  getThisWeekendEvents,
+  getTrendingEvents,
+  getSellingFastEvents,
 };

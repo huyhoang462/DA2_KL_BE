@@ -12,7 +12,6 @@ const ticketRoutes = require("./ticket.routes");
 const transactionRoutes = require("./transaction.routes");
 const staffPermissionRoutes = require("./staffPermission.routes");
 const nftRoutes = require("./nft.routes");
-const checkinRoutes = require("./checkin.routes");
 
 const initRoutes = (app) => {
   app.use("/api/auth", authRoutes);
@@ -29,6 +28,7 @@ const initRoutes = (app) => {
   app.use("/api/transactions", transactionRoutes);
   app.use("/api/staff-permissions", staffPermissionRoutes);
   app.use("/api/nft", nftRoutes);
+  app.use("/api/home", homeRoutes);
   app.use("/api/check-in", checkinRoutes);
 };
 module.exports = initRoutes;

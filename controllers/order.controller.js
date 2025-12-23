@@ -2,6 +2,10 @@ const {
   createOrder,
   getOrderStatus,
   getOrdersByUserId,
+  getOrdersByEventId,
+  getOrderDetails,
+  cancelOrder,
+  resendPaymentLink,
 } = require("../services/orderService");
 const { vnpayConfig, ProductCode } = require("../config/vnpayConfig");
 
@@ -87,8 +91,95 @@ const handleGetMyOrders = async (req, res, next) => {
   }
 };
 
+/**
+ * Lấy danh sách orders của event
+ * GET /api/events/:eventId/orders
+ */
+const handleGetEventOrders = async (req, res, next) => {
+  try {
+    const { eventId } = req.params;
+    const queryParams = req.query;
+
+    console.log("[GET EVENT ORDERS] Request:", { eventId, queryParams });
+
+    const result = await getOrdersByEventId(eventId, queryParams);
+
+    res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    console.error("[GET EVENT ORDERS] Error:", error);
+    next(error);
+  }
+};
+
+/**
+ * Lấy chi tiết order
+ * GET /api/orders/:orderId/details
+ */
+const handleGetOrderDetails = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+
+    console.log("[GET ORDER DETAILS] Request:", { orderId });
+
+    const orderDetails = await getOrderDetails(orderId);
+
+    res.status(200).json({
+      success: true,
+      order: orderDetails,
+    });
+  } catch (error) {
+    console.error("[GET ORDER DETAILS] Error:", error);
+    next(error);
+  }
+};
+
+/**
+ * Cancel order
+ * POST /api/orders/:orderId/cancel
+ */
+const handleCancelOrder = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+
+    console.log("[CANCEL ORDER] Request:", { orderId });
+
+    const result = await cancelOrder(orderId);
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("[CANCEL ORDER] Error:", error);
+    next(error);
+  }
+};
+
+/**
+ * Resend payment link
+ * POST /api/orders/:orderId/resend-payment
+ */
+const handleResendPaymentLink = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+
+    console.log("[RESEND PAYMENT LINK] Request:", { orderId });
+
+    const result = await resendPaymentLink(orderId);
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("[RESEND PAYMENT LINK] Error:", error);
+    next(error);
+  }
+};
+
 module.exports = {
   handleCreatePayment,
   handleGetOrderStatus,
   handleGetMyOrders,
+  handleGetEventOrders,
+  handleGetOrderDetails,
+  handleCancelOrder,
+  handleResendPaymentLink,
 };
