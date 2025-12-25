@@ -5,8 +5,6 @@ const { userExtractor } = require("../middlewares/authentication");
 const { checkEventOwnership } = require("../middlewares/authorization");
 
 router.post("/cleanup", eventController.handleCleanupData);
-router.get("/search", eventController.handleSearchSuggestions);
-router.get("/search/events", eventController.handleSearchEvents);
 router.get("/", eventController.handleGetAllEvents);
 router.get("/pending", eventController.handleGetPendingEvents);
 

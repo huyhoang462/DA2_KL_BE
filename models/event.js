@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { normalizeSearchText } = require("../utils/searchHelper");
 
 const addressComponentSchema = new mongoose.Schema(
   {
@@ -10,7 +11,9 @@ const addressComponentSchema = new mongoose.Schema(
 const eventSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
+    normalizedName: { type: String, trim: true }, // Tên không dấu cho search
     description: { type: String, required: true },
+    normalizedDescription: { type: String }, // Description không dấu cho search
     bannerImageUrl: { type: String, required: true },
     format: {
       type: String,
@@ -102,6 +105,17 @@ const eventSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+// Middleware để tự động tạo normalized fields
+eventSchema.pre("save", function (next) {
+  if (this.isModified("name") || !this.normalizedName) {
+    this.normalizedName = normalizeSearchText(this.name);
+  }
+  if (this.isModified("description") || !this.normalizedDescription) {
+    this.normalizedDescription = normalizeSearchText(this.description);
+  }
+  next();
+});
 
 eventSchema.pre("validate", function (next) {
   if (

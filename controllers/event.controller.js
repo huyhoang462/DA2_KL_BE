@@ -5,8 +5,6 @@ const {
   deleteEvent,
   cleanupOrphanedData,
   getEventsByUserId,
-  getSearchSuggestions,
-  searchEvents,
   getPendingEvents,
   updateEventStatus,
   updateEvent,
@@ -17,28 +15,6 @@ const {
 const handleCleanupData = async (req, res, next) => {
   try {
     const result = await cleanupOrphanedData();
-    res.status(200).json(result);
-  } catch (error) {
-    next(error);
-  }
-};
-
-const handleSearchSuggestions = async (req, res, next) => {
-  try {
-    const query = req.query.q || "";
-    const result = await getSearchSuggestions(query);
-    res.status(200).json(result);
-  } catch (error) {
-    next(error);
-  }
-};
-
-const handleSearchEvents = async (req, res, next) => {
-  try {
-    const queryParams = req.query;
-    console.log("[PARAM]: ", queryParams);
-
-    const result = await searchEvents(queryParams);
     res.status(200).json(result);
   } catch (error) {
     next(error);
@@ -178,8 +154,6 @@ const handleGetRevenueAnalytics = async (req, res, next) => {
 
 module.exports = {
   handleCleanupData,
-  handleSearchSuggestions,
-  handleSearchEvents,
   handleGetAllEvents,
   handleGetPendingEvents,
   handleGetEventById,
