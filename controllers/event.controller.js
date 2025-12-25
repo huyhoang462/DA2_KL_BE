@@ -109,8 +109,8 @@ const handleUpdateEvent = async (req, res, next) => {
 const handleUpdateEventStatus = async (req, res, next) => {
   try {
     const eventId = req.params.id;
-    const { status } = req.body;
-    const result = await updateEventStatus(eventId, status);
+    const { status, reason } = req.body;
+    const result = await updateEventStatus(eventId, status, reason);
     res.status(200).json(result);
   } catch (error) {
     next(error);

@@ -98,6 +98,8 @@ app.use(errorHandler);
 
 // updateToOnePayoutMethod();
 
+// Hàm cập nhật status cho các user chưa có trường status
+
 const Order = require("./models/order");
 const OrderItem = require("./models/orderItem");
 const Ticket = require("./models/ticket");
@@ -160,6 +162,66 @@ console.log(
     CLEANUP_INTERVAL / 1000 / 60
   } minutes)`
 );
+
+async function addStatusToUsers() {
+  try {
+    const result = await User.updateMany(
+      { status: { $exists: false } }, // Tìm các user chưa có trường status
+      { $set: { status: "active" } } // Thêm status = "active"
+    );
+    console.log("Đã cập nhật status cho:", result.modifiedCount, "user.");
+  } catch (error) {
+    console.error("Lỗi khi cập nhật status:", error);
+  }
+}
+
+// Gọi hàm khi khởi động server
+// addStatusToUsers();
+// ============================================================
+// FUNCTION: Update Banner Images
+// ============================================================
+async function updateBannerImages() {
+  const OLD_BANNER_URL =
+    "https://res.cloudinary.com/duvdr7fsj/image/upload/v1762881532/ticketbox-clone/tra7t37d4cwci8yloqtt.png";
+  const NEW_BANNER_URL =
+    "https://res.cloudinary.com/duvdr7fsj/image/upload/v1764922209/ticketbox-clone/tigqmyb0svw90rosthox.jpg";
+
+  try {
+    console.log("\n🔄 Starting banner image update...\n");
+
+    // Tìm events có banner URL cũ
+    const eventsToUpdate = await Event.find({
+      bannerImageUrl: OLD_BANNER_URL,
+    });
+
+    console.log(`📌 Found ${eventsToUpdate.length} events to update`);
+
+    if (eventsToUpdate.length === 0) {
+      console.log("✨ No events need updating. All done!\n");
+      return { updated: 0, message: "No events to update" };
+    }
+
+    // Update tất cả events
+    const updateResult = await Event.updateMany(
+      { bannerImageUrl: OLD_BANNER_URL },
+      { $set: { bannerImageUrl: NEW_BANNER_URL } }
+    );
+
+    console.log(`✅ Updated ${updateResult.modifiedCount} events`);
+    console.log("🎉 Banner image update completed!\n");
+
+    return {
+      updated: updateResult.modifiedCount,
+      message: "Banner images updated successfully",
+    };
+  } catch (error) {
+    console.error("❌ Error updating banner images:", error);
+    throw error;
+  }
+}
+
+// Uncomment dòng dưới để chạy update khi server start
+// updateBannerImages();
 
 async function resetOrders() {
   const session = await mongoose.startSession();

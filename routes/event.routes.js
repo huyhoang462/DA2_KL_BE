@@ -40,11 +40,8 @@ router.put(
 );
 router.get("/user/:id", eventController.handleGetEventsByUserId);
 router.post("/", userExtractor, eventController.handleCreateEvent);
-router.patch(
-  "/status/:id",
-
-  eventController.handleUpdateEventStatus
-);
+// NOTE: Route update status đã chuyển sang /api/admin/events/:id/status
+// Chỉ admin mới được phép approve/reject/cancel events
 router.delete(
   "/:id",
   userExtractor,

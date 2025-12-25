@@ -35,6 +35,22 @@ const userSchema = new mongoose.Schema(
       default: "user",
       required: true,
     },
+    status: {
+      type: String,
+      enum: ["active", "banned", "suspended"],
+      default: "active",
+      required: true,
+    },
+    banReason: {
+      type: String,
+    },
+    bannedAt: {
+      type: Date,
+    },
+    bannedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

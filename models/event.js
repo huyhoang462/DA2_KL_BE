@@ -70,6 +70,10 @@ const eventSchema = new mongoose.Schema(
       ],
       default: null,
     },
+    rejectionReason: {
+      type: String,
+      default: null,
+    },
     // --- TRACKING & ANALYTICS FIELDS ---
     views: {
       type: Number,

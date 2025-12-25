@@ -1469,7 +1469,7 @@ const getEventsByUserId = async (userId) => {
   }));
 };
 
-const updateEventStatus = async (eventId, status) => {
+const updateEventStatus = async (eventId, status, reason = null) => {
   // Validate eventId
   if (!eventId) {
     const error = new Error("Event ID is required");
@@ -1509,7 +1509,10 @@ const updateEventStatus = async (eventId, status) => {
   }
 
   // Tìm và cập nhật event
-  const event = await Event.findById(eventId);
+  const event = await Event.findById(eventId).populate(
+    "creator",
+    "email fullName"
+  );
 
   if (!event) {
     const error = new Error("Event not found");
@@ -1527,6 +1530,30 @@ const updateEventStatus = async (eventId, status) => {
 
   // Cập nhật status
   event.status = status;
+
+  // Nếu status là rejected và có reason, cập nhật rejectionReason
+  if (status === "rejected") {
+    if (reason) {
+      event.rejectionReason = reason;
+    }
+
+    // Gửi email thông báo từ chối đến người tạo sự kiện
+    if (event.creator && event.creator.email) {
+      try {
+        const { sendEventRejectionEmail } = require("../utils/mailer");
+        await sendEventRejectionEmail(
+          event.creator.email,
+          event.creator.fullName,
+          event.name,
+          reason || "No specific reason provided"
+        );
+      } catch (emailError) {
+        console.error("Error sending rejection email:", emailError);
+        // Không throw error ở đây để không làm fail toàn bộ request
+      }
+    }
+  }
+
   const updatedEvent = await event.save();
 
   return {
@@ -1536,6 +1563,7 @@ const updateEventStatus = async (eventId, status) => {
       id: updatedEvent.id,
       name: updatedEvent.name,
       status: updatedEvent.status,
+      rejectionReason: updatedEvent.rejectionReason,
       updatedAt: updatedEvent.updatedAt,
     },
   };

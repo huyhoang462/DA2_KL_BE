@@ -13,6 +13,11 @@ const transactionRoutes = require("./transaction.routes");
 const staffPermissionRoutes = require("./staffPermission.routes");
 const nftRoutes = require("./nft.routes");
 const homeRoutes = require("./home.routes");
+const dashboardRoutes = require("./dashboard.routes");
+const adminUserRoutes = require("./adminUser.routes");
+const adminEventRoutes = require("./adminEvent.routes");
+const reportRoutes = require("./report.routes");
+const adminTransactionRoutes = require("./adminTransaction.routes");
 
 const initRoutes = (app) => {
   app.use("/api/auth", authRoutes);
@@ -30,5 +35,10 @@ const initRoutes = (app) => {
   app.use("/api/staff-permissions", staffPermissionRoutes);
   app.use("/api/nft", nftRoutes);
   app.use("/api/home", homeRoutes);
+  app.use("/api/admin/dashboard", dashboardRoutes);
+  app.use("/api/admin/users", adminUserRoutes);
+  app.use("/api/admin/events", adminEventRoutes);
+  app.use("/api/admin/reports", reportRoutes);
+  app.use("/api/admin/transactions", adminTransactionRoutes);
 };
 module.exports = initRoutes;
