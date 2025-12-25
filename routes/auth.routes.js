@@ -4,6 +4,7 @@ const authController = require("../controllers/auth.controller");
 const { userExtractor } = require("../middlewares/authentication");
 
 router.post("/login", authController.login);
+router.post("/staff-login", authController.staffLogin);
 router.post("/refresh-token", authController.refreshToken);
 router.post("/register-request", authController.register);
 router.post("/verify-email", authController.verifyEmail);

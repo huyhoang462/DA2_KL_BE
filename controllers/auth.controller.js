@@ -19,6 +19,14 @@ const handleLogin = async (req, res, next) => {
       password,
     });
 
+    // Log access token sau khi đăng nhập thành công (phục vụ debug check-in)
+    console.log(
+      "[AUTH LOGIN SUCCESS] user=%s role=%s accessToken=%s",
+      user.id,
+      user.role,
+      accessToken
+    );
+
     res.cookie("jwt", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -33,6 +41,56 @@ const handleLogin = async (req, res, next) => {
       privyToken,
     });
   } catch (error) {
+    next(error);
+  }
+};
+
+// Đăng nhập dành riêng cho staff trên app
+const handleStaffLogin = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+    console.log("[STAFF LOGIN REQUEST] email=%s", email);
+    const { accessToken, refreshToken, user, privyToken } = await login({
+      email,
+      password,
+    });
+
+    if (user.role !== "staff") {
+      console.warn(
+        "[STAFF LOGIN DENIED] email=%s role=%s",
+        user.email,
+        user.role
+      );
+      const error = new Error("Access denied. Staff role required");
+      error.status = 403;
+      throw error;
+    }
+
+    res.cookie("jwt", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
+    });
+
+    console.log(
+      "[STAFF LOGIN SUCCESS] user=%s role=%s accessToken=%s",
+      user.id,
+      user.role,
+      accessToken
+    );
+
+    res.status(200).json({
+      accessToken,
+      user,
+      privyToken,
+    });
+  } catch (error) {
+    console.error(
+      "[STAFF LOGIN ERROR] email=%s error=%s",
+      req.body.email,
+      error.message
+    );
     next(error);
   }
 };
@@ -143,6 +201,7 @@ const handleSyncWallet = async (req, res, next) => {
 };
 module.exports = {
   login: handleLogin,
+  staffLogin: handleStaffLogin,
   refreshToken: handleRefreshToken,
   register: handleRegisterRequest,
   verifyEmail: handleVerifyEmail,
