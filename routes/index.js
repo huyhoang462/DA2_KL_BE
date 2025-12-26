@@ -20,6 +20,7 @@ const adminEventRoutes = require("./adminEvent.routes");
 const reportRoutes = require("./report.routes");
 const adminTransactionRoutes = require("./adminTransaction.routes");
 const checkinRoutes = require("./checkin.routes");
+const showRoutes = require("./show.routes");
 
 const initRoutes = (app) => {
   app.use("/api/auth", authRoutes);
@@ -44,5 +45,6 @@ const initRoutes = (app) => {
   app.use("/api/admin/reports", reportRoutes);
   app.use("/api/admin/transactions", adminTransactionRoutes);
   app.use("/api/check-in", checkinRoutes);
+  app.use("/api/shows", showRoutes);
 };
 module.exports = initRoutes;
