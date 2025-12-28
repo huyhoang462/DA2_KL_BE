@@ -445,6 +445,7 @@ const updateEvent = async (eventId, updateData) => {
       "endDate",
       "organizer",
       "category",
+      "status",
     ];
 
     allowedFields.forEach((field) => {
@@ -906,7 +907,7 @@ const createEvent = async (data, creatorId) => {
       creator: creator._id,
       category: category._id,
       payoutMethod: payoutMethodId,
-      status: "pending",
+      status: status || "pending",
     });
     const savedEvent = await newEvent.save({ session });
 

@@ -10,6 +10,11 @@ const showSchema = new mongoose.Schema(
       ref: "Event",
       required: true,
     },
+    status: {
+      type: String,
+      enum: ["pending", "ongoing", "completed"],
+      default: "pending",
+    },
   },
   { timestamps: true }
 );

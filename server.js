@@ -7,6 +7,10 @@ const errorHandler = require("./middlewares/errorHandler");
 const cookieParser = require("cookie-parser");
 const { tokenExtractor } = require("./middlewares/authentication");
 const { updateEventStatuses } = require("./services/eventStatusService"); // ✅ IMPORT
+const {
+  updateShowStatuses,
+  initializeShowStatuses,
+} = require("./services/showStatusService"); // ✅ IMPORT SHOW STATUS
 const helmet = require("helmet");
 const app = express();
 
@@ -133,6 +137,42 @@ setInterval(async () => {
 console.log(
   `✅ Event status checker started (runs every ${
     EVENT_STATUS_CHECK_INTERVAL / 1000 / 60
+  } minutes)`
+);
+
+// ✅ TỰ ĐỘNG CẬP NHẬT SHOW STATUS
+// Chạy ngay khi server khởi động - Initialize status cho shows chưa có status
+initializeShowStatuses()
+  .then((result) => {
+    console.log("Initial show status initialization completed:", result);
+  })
+  .catch((error) => {
+    console.error("Initial show status initialization failed:", error);
+  });
+
+// Chạy lần đầu để cập nhật các show hiện có
+updateShowStatuses()
+  .then((result) => {
+    console.log("Initial show status check completed:", result);
+  })
+  .catch((error) => {
+    console.error("Initial show status check failed:", error);
+  });
+
+// Chạy định kỳ mỗi 5 phút
+const SHOW_STATUS_CHECK_INTERVAL = 5 * 60 * 1000; // 5 phút
+
+setInterval(async () => {
+  try {
+    await updateShowStatuses();
+  } catch (error) {
+    console.error("Scheduled show status check failed:", error);
+  }
+}, SHOW_STATUS_CHECK_INTERVAL);
+
+console.log(
+  `✅ Show status checker started (runs every ${
+    SHOW_STATUS_CHECK_INTERVAL / 1000 / 60
   } minutes)`
 );
 
