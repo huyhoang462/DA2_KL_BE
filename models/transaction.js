@@ -12,7 +12,7 @@ const transactionSchema = new mongoose.Schema(
     transactionCode: { type: String },
     status: {
       type: String,
-      enum: ["pending", "success", "failed", "refunded"],
+      enum: ["pending", "success", "failed", "cancelled", "refunded"],
       default: "pending",
       required: true,
     },

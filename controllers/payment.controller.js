@@ -98,9 +98,19 @@ const handleVnpayIpn = async (req, res) => {
         transactionNo
       );
       return res.status(200).json({ RspCode: "00", Message: "Success" });
+    } else if (responseCode === "24") {
+      // ⭐ User chủ động HỦY thanh toán
+      await processCancelledPayment(order);
+      console.log(
+        "🚫 USER CANCELLED PAYMENT - Order:",
+        orderId,
+        "| ResponseCode:",
+        responseCode
+      );
+      return res.status(200).json({ RspCode: "00", Message: "Success" });
     } else {
-      // Thanh toán thất bại
-      await processFailedPayment(order);
+      // Thanh toán thất bại (lỗi kỹ thuật, không đủ tiền, etc.)
+      await processFailedPayment(order, responseCode);
       console.log(
         "❌ PAYMENT FAILED - Order:",
         orderId,
@@ -155,6 +165,12 @@ const handleVnpayReturn = async (req, res) => {
       // Redirect về trang success với orderId
       return res.redirect(
         `${process.env.CLIENT_URL}/payment-success/${orderId}`
+      );
+    } else if (responseCode === "24") {
+      // ⭐ User HỦY thanh toán
+      console.log("🚫 User cancelled payment, redirecting to cancelled page");
+      return res.redirect(
+        `${process.env.CLIENT_URL}/payment-cancelled?orderId=${orderId}`
       );
     } else {
       console.log("❌ Payment failed, redirecting to failed page");
@@ -310,7 +326,7 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
   }
 };
 
-const processFailedPayment = async (order) => {
+const processFailedPayment = async (order, responseCode = null) => {
   const session = await mongoose.startSession();
 
   try {
@@ -327,6 +343,7 @@ const processFailedPayment = async (order) => {
 
     // 1. Update order status
     order.status = "failed";
+    order.failureReason = getFailureReason(responseCode); // ⭐ Lưu lý do fail
     await order.save({ session });
 
     // ✅ 2. TẠO TRANSACTION RECORD (dùng service)
@@ -373,6 +390,103 @@ const processFailedPayment = async (order) => {
   } finally {
     await session.endSession();
   }
+};
+
+/**
+ * ⭐ XỬ LÝ KHI USER HỦY THANH TOÁN (Response Code = 24)
+ */
+const processCancelledPayment = async (order) => {
+  const session = await mongoose.startSession();
+
+  try {
+    await session.startTransaction();
+
+    console.log(`🔄 Processing cancelled payment for order ${order._id}...`);
+
+    // ✅ KIỂM TRA IDEMPOTENCY
+    if (order.status === "cancelled") {
+      console.log(`⚠️ Order already marked as cancelled. Skipping.`);
+      await session.commitTransaction();
+      return { message: "Order already cancelled" };
+    }
+
+    // 1. Update order status
+    order.status = "cancelled";
+    order.cancelledAt = new Date();
+    order.cancelReason = "User cancelled payment"; // ⭐ Lý do cancel
+    await order.save({ session });
+
+    // ✅ 2. TẠO TRANSACTION RECORD
+    await transactionService.createTransaction(
+      {
+        orderId: order._id,
+        amount: order.totalAmount,
+        paymentMethod: "vnpay",
+        transactionCode: null,
+        status: "cancelled", // ⭐ Status khác với failed
+      },
+      session
+    );
+
+    // 3. Release tickets
+    const orderItems = await OrderItem.find({ order: order._id }).session(
+      session
+    );
+
+    let totalTicketsReleased = 0;
+    for (const item of orderItems) {
+      await TicketType.findByIdAndUpdate(
+        item.ticketType,
+        { $inc: { quantitySold: -item.quantity } },
+        { session }
+      );
+      totalTicketsReleased += item.quantity;
+    }
+
+    console.log(`✅ Order ${order._id} marked as CANCELLED`);
+    console.log(
+      `🎫 Released ${totalTicketsReleased} tickets back to inventory`
+    );
+
+    await session.commitTransaction();
+
+    return {
+      success: true,
+      message: "Order cancelled by user",
+      orderId: order._id,
+    };
+  } catch (error) {
+    console.error("❌ Error processing cancelled payment:", error);
+
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+};
+
+/**
+ * ⭐ MAP VNPAY RESPONSE CODE → HUMAN READABLE MESSAGE
+ */
+const getFailureReason = (responseCode) => {
+  const reasons = {
+    "07": "Giao dịch bị nghi ngờ gian lận",
+    "09": "Chưa hoàn tất xác thực 3D-Secure",
+    10: "Thẻ/Tài khoản chưa đăng ký dịch vụ Internet Banking",
+    11: "Giao dịch hết hạn timeout",
+    12: "Tài khoản bị khóa",
+    13: "Sai mật khẩu OTP quá số lần quy định",
+    51: "Tài khoản không đủ số dư",
+    65: "Vượt quá hạn mức giao dịch trong ngày",
+    75: "Ngân hàng đang bảo trì",
+    79: "Nhập sai mật khẩu thanh toán quá số lần quy định",
+    99: "Lỗi không xác định",
+  };
+
+  return reasons[responseCode] || `Lỗi thanh toán (Code: ${responseCode})`;
 };
 
 // ✅ SỬA handleFinalizeOrder - THÊM KIỂM TRA
@@ -428,13 +542,24 @@ const handleFinalizeOrder = async (req, res) => {
           ticketsCreated: result.tickets?.length || 0,
         },
       });
+    } else if (vnp_ResponseCode === "24") {
+      // ⭐ USER HỦY
+      await processCancelledPayment(order);
+
+      return res.status(200).json({
+        success: true,
+        message: "Payment cancelled by user",
+        status: "cancelled",
+      });
     } else {
-      await processFailedPayment(order);
+      // ❌ FAILED
+      await processFailedPayment(order, vnp_ResponseCode);
 
       return res.status(200).json({
         success: true,
         message: "Payment failed",
         status: "failed",
+        failureReason: getFailureReason(vnp_ResponseCode),
       });
     }
   } catch (error) {
@@ -451,5 +576,7 @@ module.exports = {
   handleVnpayReturn,
   processSuccessfulPayment,
   processFailedPayment,
+  processCancelledPayment, // ⭐ Export thêm
+  getFailureReason, // ⭐ Export để dùng ở nơi khác
   handleFinalizeOrder,
 };

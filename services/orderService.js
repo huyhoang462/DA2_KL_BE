@@ -124,23 +124,27 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
   }
 
   try {
-    // ✅ TÌM VÀ CANCEL TẤT CẢ ORDER PENDING CŨ (TRONG 5 PHÚT)
-    const recentOrders = await Order.find({
+    // ⭐ Cancel ALL pending orders (trong 15 phút gần đây)
+    console.log(`\n[CREATE ORDER] Checking pending orders...`);
+
+    const pendingOrders = await Order.find({
       buyer: buyerId,
       status: "pending",
-      createdAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) },
+      createdAt: { $gte: new Date(Date.now() - 15 * 60 * 1000) },
     });
 
-    if (recentOrders.length > 0) {
+    if (pendingOrders.length > 0) {
       console.log(
-        `Found ${recentOrders.length} recent pending order(s). Cancelling...`
+        `[CREATE ORDER] Found ${pendingOrders.length} pending order(s). Cancelling all...`
       );
 
-      for (const oldOrder of recentOrders) {
-        await cancelOrderAndReleaseTickets(oldOrder._id);
-      }
+      await Promise.all(
+        pendingOrders.map((order) => cancelOrderAndReleaseTickets(order._id))
+      );
 
-      console.log("✅ All old pending orders cancelled");
+      console.log(
+        `[CREATE ORDER] ✅ Cancelled ${pendingOrders.length} pending order(s)`
+      );
     }
 
     // --- KIỂM TRA SƠ BỘ TRƯỚC KHI TẠO SESSION ---

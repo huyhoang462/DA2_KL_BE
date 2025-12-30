@@ -25,6 +25,9 @@ const orderSchema = new mongoose.Schema(
       default: "pending",
       required: true,
     },
+    failureReason: { type: String }, // ⭐ Lý do failed (từ VNPay code)
+    cancelReason: { type: String }, // ⭐ Lý do cancelled
+    cancelledAt: { type: Date }, // ⭐ Thời điểm cancel
     walletAddress: { type: String, required: true },
     txHash: { type: String, unique: true, sparse: true },
     expiresAt: { type: Date, required: true },
