@@ -288,7 +288,7 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
     console.log(`✅ Transaction committed successfully for order ${order._id}`);
 
     // ============================================================
-    // 👉 ĐOẠN 2: BẮN JOB SANG WORKER
+    // 👉 ĐOẠN 2: BẮN JOB SANG WORKER + CẬP NHẬT mintStatus
     // (Đặt ở đây là an toàn nhất: DB đã xong, biến vẫn còn scope)
     // ============================================================
     try {
@@ -296,7 +296,21 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
         console.log(
           `💳 [MINT QUEUE] Kích hoạt Mint NFT cho Order ${order._id} -> Wallet: ${buyerWallet} | Tickets: ${totalTicketsToMint}`
         );
-        // Gọi hàm queueService
+
+        // 4.1 Cập nhật mintStatus của tất cả tickets thuộc order này sang "pending"
+        const updateResult = await Ticket.updateMany(
+          { order: order._id, mintStatus: "unminted" },
+          { $set: { mintStatus: "pending" } }
+        );
+
+        const modifiedCount =
+          updateResult.modifiedCount ?? updateResult.nModified ?? 0;
+
+        console.log(
+          `📌 [MINT STATUS] Order ${order._id}: set mintStatus=pending cho ${modifiedCount} ticket(s)`
+        );
+
+        // 4.2 Gửi job Mint sang Worker
         await addMintJob(buyerWallet, totalTicketsToMint, order._id.toString());
       } else {
         console.warn(

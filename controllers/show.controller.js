@@ -27,10 +27,10 @@ const getCheckins = async (req, res, next) => {
 };
 
 // Listing shows that a staff is assigned to (used for App)
-// GET /api/shows/listing?staffId&Page&limit
+// GET /api/shows/listing?staffId&status&page&limit
 const getShows = async (req, res, next) => {
   try {
-    const { staffId, page = 1, limit = 6 } = req.query;
+    const { staffId, page = 1, limit = 6, status } = req.query;
     const currentUserId = req.user.id;
     const currentUserRole = req.user.role;
 
@@ -51,7 +51,8 @@ const getShows = async (req, res, next) => {
     const { shows, pagination } = await showService.getShowsByStaff(
       targetStaffId,
       Number(page) || 1,
-      Number(limit) || 6
+      Number(limit) || 6,
+      status
     );
 
     return res.json({

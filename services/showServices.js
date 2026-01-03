@@ -21,9 +21,10 @@ const createShow = async (data) => {
  * @param {String} staffId - ID của user/staff
  * @param {number} page - Trang hiện tại
  * @param {number} limit - Số show mỗi trang
+ * @param {string} [status] - Trạng thái show (pending|ongoing|completed)
  * @returns {{ shows: Array, pagination: Object }}
  */
-const getShowsByStaff = async (staffId, page = 1, limit = 6) => {
+const getShowsByStaff = async (staffId, page = 1, limit = 6, status) => {
   if (!mongoose.Types.ObjectId.isValid(staffId)) {
     const error = new Error("Invalid staff ID format");
     error.status = 400;
@@ -45,13 +46,19 @@ const getShowsByStaff = async (staffId, page = 1, limit = 6) => {
 
     const filter = { event: { $in: eventIds } };
 
+    // Optional filter by show status if provided and valid
+    if (status && ["pending", "ongoing", "completed"].includes(status)) {
+      filter.status = status;
+    }
+
     const totalItems = await Show.countDocuments(filter);
 
     const { skip, itemsPerPage } = createPaginationMetadata(0, page, limit);
 
     const shows = await Show.find(filter)
       .populate({ path: "event", select: "name bannerImageUrl" })
-      .sort({ startTime: 1 })
+      // Luôn trả về từ ngày gần nhất đến xa nhất
+      .sort({ startTime: -1 })
       .skip(skip)
       .limit(itemsPerPage)
       .lean();
@@ -61,6 +68,7 @@ const getShowsByStaff = async (staffId, page = 1, limit = 6) => {
       showName: show.name,
       startTime: show.startTime,
       endTime: show.endTime,
+      status: show.status,
       eventId: show.event?._id?.toString(),
       eventName: show.event?.name,
       eventBannerImageUrl: show.event?.bannerImageUrl,

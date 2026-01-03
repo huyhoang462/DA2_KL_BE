@@ -7,9 +7,14 @@ const connection = {
   password: process.env.REDIS_PASSWORD,
 };
 
+// ------------------------------------------------------
+// Queue MINT NFT (mint-queue)
+// ------------------------------------------------------
+const mintQueueName = process.env.MINT_QUEUE_NAME || "mint-queue";
+
 // Khởi tạo hàng đợi MINT
-// Lưu ý: Tên 'mint-queue' phải khớp với file config.js trong Repo 3
-const mintQueue = new Queue("mint-queue", {
+// Lưu ý: Tên queue phải khớp với file config.js bên Worker
+const mintQueue = new Queue(mintQueueName, {
   connection,
   defaultJobOptions: {
     removeOnComplete: true, // Xóa job khi xong để đỡ tốn RAM Redis
@@ -48,4 +53,38 @@ const addMintJob = async (userWallet, quantity, orderId) => {
   }
 };
 
-module.exports = { addMintJob };
+// ------------------------------------------------------
+// Queue CHECK-IN (đồng bộ check-in lên Blockchain)
+// ------------------------------------------------------
+const checkInQueueName = process.env.CHECKIN_QUEUE_NAME || "checkin-queue";
+
+const checkInQueue = new Queue(checkInQueueName, {
+  connection,
+  defaultJobOptions: {
+    removeOnComplete: true,
+    removeOnFail: 5000,
+    attempts: 3,
+  },
+});
+
+/**
+ * Hàm bắn yêu cầu Check-in sang Worker
+ * @param {string|number} ticketId - ID vé/ticket trên Blockchain (tokenId)
+ */
+const addCheckInJob = async (ticketId) => {
+  try {
+    await checkInQueue.add("checkin-job", { ticketId });
+
+    const counts = await checkInQueue.getJobCounts();
+    console.log(`🚀 [Queue] Đã bắn yêu cầu Check-in cho Ticket #${ticketId}`);
+    console.log(
+      `📥 [CheckIn Queue] waiting=${counts.waiting}, active=${
+        counts.active
+      }, delayed=${counts.delayed || 0}, completed=${counts.completed || 0}`
+    );
+  } catch (error) {
+    console.error("❌ [Queue] Lỗi gửi job Check-in:", error);
+  }
+};
+
+module.exports = { addMintJob, addCheckInJob };
