@@ -31,7 +31,8 @@ const handleCreatePayment = async (req, res, next) => {
       `${process.env.SERVER_URL}/api/payment/vnpay-ipn`;
 
     const returnUrl =
-      process.env.VNP_RETURN_URL || "http://localhost:5173/payment/result";
+      process.env.VNP_RETURN_URL ||
+      "http://localhost:5173/payment/vnpay-return";
 
     const paymentUrl = vnpayConfig.buildPaymentUrl({
       vnp_Amount: orderResult.totalAmount, // Số tiền (VNPay tự nhân 100)

@@ -5,6 +5,8 @@ const {
   deleteTicket,
   getTicketTypesByShow,
   getTicketsByShowId,
+  getTicketTypesStatsForOrganizer,
+  getTicketsListForOrganizer,
 } = require("../services/ticketService");
 
 /**
@@ -145,6 +147,58 @@ const handleGetTicketsByShow = async (req, res, next) => {
   }
 };
 
+/**
+ * ⭐ NEW: Lấy ticket stats cho Organizer (Desktop) - Với checkinRate
+ * GET /api/tickets/organizer/show/:showId/stats
+ */
+const handleGetOrganizerStats = async (req, res, next) => {
+  try {
+    const { showId } = req.params;
+
+    console.log("[GET ORGANIZER STATS] Request:", { showId });
+
+    const result = await getTicketTypesStatsForOrganizer(showId);
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("[GET ORGANIZER STATS] Error:", error);
+    next(error);
+  }
+};
+
+/**
+ * ⭐ NEW: Lấy danh sách vé cho Organizer (Desktop) - Chỉ vé đã thanh toán
+ * GET /api/tickets/organizer/show/:showId/list
+ */
+const handleGetOrganizerTickets = async (req, res, next) => {
+  try {
+    const { showId } = req.params;
+    const { status, ticketTypeId, search, page, limit } = req.query;
+
+    console.log("[GET ORGANIZER TICKETS] Request:", {
+      showId,
+      status,
+      ticketTypeId,
+      search,
+      page,
+      limit,
+    });
+
+    const result = await getTicketsListForOrganizer(showId, {
+      status,
+      ticketTypeId,
+      search,
+      page,
+      limit,
+    });
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("[GET ORGANIZER TICKETS] Error:", error);
+    next(error);
+  }
+};
+
 module.exports = {
   handleGetMyTickets,
   handleGetTicketsByOrderId,
@@ -152,4 +206,7 @@ module.exports = {
   handleDeleteTicket,
   handleGetTicketTypesByShow,
   handleGetTicketsByShow,
+  handleGetOrganizerStats,
+  handleGetOrganizerTickets,
 };
+

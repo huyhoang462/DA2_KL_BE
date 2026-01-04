@@ -349,6 +349,72 @@ const getTicketTypesByShow = async (showId) => {
 };
 
 /**
+ * Lấy ticket types statistics cho Organizer (Desktop) - Với checkinRate
+ * @param {String} showId - ID của show
+ * @returns {Object} - Statistics với checkinRate
+ */
+const getTicketTypesStatsForOrganizer = async (showId) => {
+  if (!showId || !mongoose.Types.ObjectId.isValid(showId)) {
+    const err = new Error("Valid Show ID is required");
+    err.status = 400;
+    throw err;
+  }
+
+  const ticketTypes = await TicketType.find({ show: showId })
+    .sort({ price: 1 })
+    .lean();
+
+  // Tính tổng các chệ số
+  const totalQuantity = ticketTypes.reduce(
+    (sum, tt) => sum + tt.quantityTotal,
+    0
+  );
+  const totalSold = ticketTypes.reduce((sum, tt) => sum + tt.quantitySold, 0);
+  const totalCheckedIn = ticketTypes.reduce(
+    (sum, tt) => sum + (tt.quantityCheckedIn || 0),
+    0
+  );
+
+  // Tính tỷ lệ check-in tổng thể
+  const checkinRate =
+    totalSold > 0
+      ? parseFloat(((totalCheckedIn / totalSold) * 100).toFixed(2))
+      : 0;
+
+  return {
+    totalQuantity,
+    totalSold,
+    totalCheckedIn,
+    totalAvailable: totalQuantity - totalSold,
+    checkinRate, // % đã check-in / đã bán
+    ticketTypes: ticketTypes.map((tt) => {
+      const ttCheckinRate =
+        tt.quantitySold > 0
+          ? parseFloat(
+              ((tt.quantityCheckedIn / tt.quantitySold) * 100).toFixed(2)
+            )
+          : 0;
+
+      return {
+        id: tt._id.toString(),
+        name: tt.name,
+        price: tt.price,
+        quantityTotal: tt.quantityTotal,
+        quantitySold: tt.quantitySold,
+        quantityCheckedIn: tt.quantityCheckedIn || 0,
+        quantityAvailable: tt.quantityTotal - tt.quantitySold,
+        checkinRate: ttCheckinRate, // % check-in riêng loại vé này
+        minPurchase: tt.minPurchase,
+        maxPurchase: tt.maxPurchase,
+        description: tt.description,
+        createdAt: tt.createdAt,
+        updatedAt: tt.updatedAt,
+      };
+    }),
+  };
+};
+
+/**
  * Lấy tất cả tickets của một show (cho quản lý check-in)
  * @param {String} showId - ID của show
  * @param {Object} filters - { status, ticketTypeId, search, page, limit }
@@ -530,6 +596,225 @@ const getTicketsByShowId = async (showId, filters = {}) => {
   };
 };
 
+/**
+ * Lấy danh sách vé cho Organizer (Desktop) - Chỉ vé đã thanh toán
+ * @param {String} showId - ID của show
+ * @param {Object} filters - { status, ticketTypeId, search, page, limit }
+ */
+const getTicketsListForOrganizer = async (showId, filters = {}) => {
+  if (!showId || !mongoose.Types.ObjectId.isValid(showId)) {
+    const err = new Error("Valid Show ID is required");
+    err.status = 400;
+    throw err;
+  }
+
+  const { status, ticketTypeId, search, page = 1, limit = 50 } = filters;
+
+  // Build match conditions for tickets
+  const ticketMatchConditions = {};
+
+  // Filter by ticket status
+  if (status) {
+    ticketMatchConditions.status = status;
+  }
+
+  // ⚠️ Filter by ticket type - PHẢI filter TRƯC khi lookup
+  if (ticketTypeId && mongoose.Types.ObjectId.isValid(ticketTypeId)) {
+    ticketMatchConditions.ticketType = new mongoose.Types.ObjectId(
+      ticketTypeId
+    );
+  }
+
+  // Aggregation pipeline
+  const pipeline = [
+    // Stage 0: ⭐ Filter tickets TRƯC (khi ticketType còn là ObjectId)
+    ...(Object.keys(ticketMatchConditions).length > 0
+      ? [
+          {
+            $match: ticketMatchConditions,
+          },
+        ]
+      : []),
+
+    // Stage 1: Lookup TicketType
+    {
+      $lookup: {
+        from: "tickettypes",
+        localField: "ticketType",
+        foreignField: "_id",
+        as: "ticketType",
+      },
+    },
+    {
+      $unwind: "$ticketType",
+    },
+
+    // Stage 2: Filter by show
+    {
+      $match: {
+        "ticketType.show": new mongoose.Types.ObjectId(showId),
+      },
+    },
+
+    // Stage 2.5: ⭐ Extract ticketIndex từ qrCode (TICKET-orderId-ticketTypeId-INDEX-timestamp-random)
+    {
+      $addFields: {
+        ticketIndex: {
+          $toInt: {
+            $arrayElemAt: [
+              { $split: ["$qrCode", "-"] },
+              3, // Index is at position 3 (0-based)
+            ],
+          },
+        },
+      },
+    },
+
+    // Stage 3: Lookup Order
+    {
+      $lookup: {
+        from: "orders",
+        localField: "order",
+        foreignField: "_id",
+        as: "order",
+      },
+    },
+    {
+      $unwind: "$order",
+    },
+
+    // Stage 4: ⭐ Filter chỉ lấy vé có order.status = "paid"
+    {
+      $match: {
+        "order.status": "paid",
+      },
+    },
+
+    // Stage 5: Lookup Owner (User)
+    {
+      $lookup: {
+        from: "users",
+        localField: "owner",
+        foreignField: "_id",
+        as: "owner",
+      },
+    },
+    {
+      $unwind: "$owner",
+    },
+
+    // Stage 6: Search filter (qrCode, owner name, order code)
+    ...(search
+      ? [
+          {
+            $match: {
+              $or: [
+                { qrCode: { $regex: search, $options: "i" } },
+                { "owner.fullName": { $regex: search, $options: "i" } },
+                { "order.orderCode": { $regex: search, $options: "i" } },
+              ],
+            },
+          },
+        ]
+      : []),
+
+    // Stage 7: Sort (checkinAt DESC, then createdAt DESC)
+    {
+      $sort: {
+        checkinAt: -1,
+        createdAt: -1,
+      },
+    },
+
+    // Stage 8: Facet for pagination
+    {
+      $facet: {
+        metadata: [{ $count: "total" }],
+        data: [
+          { $skip: (parseInt(page) - 1) * parseInt(limit) },
+          { $limit: parseInt(limit) },
+          {
+            $project: {
+              _id: 1,
+              qrCode: 1,
+              ticketIndex: 1, // ⭐ ADD
+              status: 1,
+              checkinAt: 1,
+              lastCheckOutAt: 1,
+              mintStatus: 1, // ⭐ ADD
+              tokenId: 1, // ⭐ ADD
+              createdAt: 1,
+              updatedAt: 1,
+              ticketType: {
+                _id: 1,
+                name: 1,
+                price: 1,
+              },
+              order: {
+                _id: 1,
+                orderCode: 1,
+                status: 1,
+                totalAmount: 1,
+              },
+              owner: {
+                _id: 1,
+                fullName: 1,
+                email: 1,
+                phone: 1,
+              },
+            },
+          },
+        ],
+      },
+    },
+  ];
+
+  const results = await Ticket.aggregate(pipeline);
+
+  const tickets = results[0]?.data || [];
+  const total = results[0]?.metadata[0]?.total || 0;
+  const totalPages = Math.ceil(total / parseInt(limit));
+
+  return {
+    success: true,
+    data: tickets.map((ticket) => ({
+      id: ticket._id.toString(),
+      qrCode: ticket.qrCode,
+      ticketIndex: ticket.ticketIndex, // ⭐ Số thứ tự vé (0, 1, 2, ...)
+      status: ticket.status,
+      checkinAt: ticket.checkinAt,
+      lastCheckOutAt: ticket.lastCheckOutAt,
+      mintStatus: ticket.mintStatus || "unminted", // ⭐ NFT mint status
+      tokenId: ticket.tokenId || null, // ⭐ NFT tokenId (nếu đã mint)
+      createdAt: ticket.createdAt,
+      updatedAt: ticket.updatedAt,
+      ticketType: {
+        id: ticket.ticketType._id.toString(),
+        name: ticket.ticketType.name,
+        price: ticket.ticketType.price,
+      },
+      order: {
+        id: ticket.order._id.toString(),
+        orderCode: ticket.order.orderCode,
+        status: ticket.order.status,
+        totalAmount: ticket.order.totalAmount,
+      },
+      owner: {
+        id: ticket.owner._id.toString(),
+        fullName: ticket.owner.fullName,
+        email: ticket.owner.email,
+        phone: ticket.owner.phone,
+      },
+    })),
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      totalPages,
+    },
+  };
+};
+
 module.exports = {
   createTicketsForOrder,
   getTicketsByUserId,
@@ -538,4 +823,6 @@ module.exports = {
   deleteTicket,
   getTicketTypesByShow,
   getTicketsByShowId,
+  getTicketTypesStatsForOrganizer,
+  getTicketsListForOrganizer,
 };
