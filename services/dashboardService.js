@@ -212,7 +212,7 @@ const getDashboardOverview = async () => {
         priority: "high",
         message: `Bạn có ${pendingEvents} sự kiện đang chờ duyệt`,
         action: "Xem sự kiện chờ duyệt",
-        link: "/admin/events/pending",
+        link: "/admin/events",
       });
     }
 

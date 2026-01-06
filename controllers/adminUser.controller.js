@@ -5,6 +5,8 @@ const {
   banUser,
   unbanUser,
   deleteUser,
+  getUserOrders,
+  getUserEvents,
 } = require("../services/adminUserService");
 
 /**
@@ -150,6 +152,58 @@ const handleDeleteUser = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/admin/users/:id/orders
+ * Lấy danh sách đơn hàng của user với phân trang và thống kê
+ */
+const handleGetUserOrders = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 10, status, startDate, endDate } = req.query;
+
+    const filters = { status, startDate, endDate };
+
+    console.log("[ADMIN USER] Getting user orders:", {
+      id,
+      page,
+      limit,
+      filters,
+    });
+
+    const result = await getUserOrders(id, page, limit, filters);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("[ADMIN USER] Error getting user orders:", error);
+    next(error);
+  }
+};
+
+/**
+ * GET /api/admin/users/:id/events
+ * Lấy danh sách sự kiện đã tạo bởi user với phân trang và thống kê
+ */
+const handleGetUserEvents = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 10, status, startDate, endDate } = req.query;
+
+    const filters = { status, startDate, endDate };
+
+    console.log("[ADMIN USER] Getting user events:", {
+      id,
+      page,
+      limit,
+      filters,
+    });
+
+    const result = await getUserEvents(id, page, limit, filters);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("[ADMIN USER] Error getting user events:", error);
+    next(error);
+  }
+};
+
 module.exports = {
   handleGetAllUsers,
   handleGetUserById,
@@ -157,4 +211,6 @@ module.exports = {
   handleBanUser,
   handleUnbanUser,
   handleDeleteUser,
+  handleGetUserOrders,
+  handleGetUserEvents,
 };

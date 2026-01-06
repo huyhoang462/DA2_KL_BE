@@ -7,6 +7,8 @@ const {
   handleBanUser,
   handleUnbanUser,
   handleDeleteUser,
+  handleGetUserOrders,
+  handleGetUserEvents,
 } = require("../controllers/adminUser.controller");
 const { userExtractor } = require("../middlewares/authentication");
 const { requireAdmin } = require("../middlewares/authorization");
@@ -62,5 +64,29 @@ router.post("/:id/unban", userExtractor, requireAdmin, handleUnbanUser);
  * @access  Admin only
  */
 router.delete("/:id", userExtractor, requireAdmin, handleDeleteUser);
+
+/**
+ * @route   GET /api/admin/users/:id/orders
+ * @desc    Lấy danh sách đơn hàng của user với phân trang và thống kê chi tiết
+ * @query   page (number) - Số trang (default: 1)
+ * @query   limit (number) - Số lượng per page (default: 10)
+ * @query   status (string) - Lọc theo status: pending, paid, cancelled, refunded
+ * @query   startDate (string) - Lọc từ ngày (ISO format)
+ * @query   endDate (string) - Lọc đến ngày (ISO format)
+ * @access  Admin only
+ */
+router.get("/:id/orders", userExtractor, requireAdmin, handleGetUserOrders);
+
+/**
+ * @route   GET /api/admin/users/:id/events
+ * @desc    Lấy danh sách sự kiện đã tạo bởi user với phân trang và thống kê
+ * @query   page (number) - Số trang (default: 1)
+ * @query   limit (number) - Số lượng per page (default: 10)
+ * @query   status (string) - Lọc theo status: draft, published, ongoing, completed, cancelled
+ * @query   startDate (string) - Lọc từ ngày (ISO format)
+ * @query   endDate (string) - Lọc đến ngày (ISO format)
+ * @access  Admin only
+ */
+router.get("/:id/events", userExtractor, requireAdmin, handleGetUserEvents);
 
 module.exports = router;

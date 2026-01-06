@@ -12,13 +12,13 @@ router.get("/pending", eventController.handleGetPendingEvents);
 router.get(
   "/:id/dashboard/overview",
   userExtractor,
-  checkEventOwnership,
+  // checkEventOwnership,
   eventController.handleGetDashboardOverview
 );
 router.get(
   "/:id/dashboard/revenue-chart",
   userExtractor,
-  checkEventOwnership,
+  //checkEventOwnership,
   eventController.handleGetRevenueAnalytics
 );
 

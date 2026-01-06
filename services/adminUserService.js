@@ -1,8 +1,12 @@
 const mongoose = require("mongoose");
 const User = require("../models/user");
 const Order = require("../models/order");
+const OrderItem = require("../models/orderItem");
 const Event = require("../models/event");
 const Ticket = require("../models/ticket");
+const TicketType = require("../models/ticketType");
+const Show = require("../models/show");
+const Transaction = require("../models/transaction");
 const {
   sendUserBannedEmail,
   sendUserUnbannedEmail,
@@ -615,6 +619,475 @@ const deleteUser = async (userId, adminId, hardDelete = false) => {
   }
 };
 
+/**
+ * Lấy danh sách đơn hàng của user với phân trang và thống kê chi tiết
+ */
+const getUserOrders = async (userId, page = 1, limit = 10, filters = {}) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      const error = new Error("Invalid user ID format");
+      error.status = 400;
+      throw error;
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      const error = new Error("User not found");
+      error.status = 404;
+      throw error;
+    }
+
+    // Build match query
+    const matchQuery = { buyer: new mongoose.Types.ObjectId(userId) };
+
+    // Filter by status
+    if (
+      filters.status &&
+      ["pending", "paid", "cancelled", "refunded"].includes(filters.status)
+    ) {
+      matchQuery.status = filters.status;
+    }
+
+    // Date range filter
+    if (filters.startDate || filters.endDate) {
+      matchQuery.createdAt = {};
+      if (filters.startDate) {
+        matchQuery.createdAt.$gte = new Date(filters.startDate);
+      }
+      if (filters.endDate) {
+        matchQuery.createdAt.$lte = new Date(filters.endDate);
+      }
+    }
+
+    // Aggregation pipeline for statistics
+    const statsAggregation = await Order.aggregate([
+      { $match: { buyer: new mongoose.Types.ObjectId(userId) } },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+          totalAmount: { $sum: "$totalAmount" },
+        },
+      },
+    ]);
+
+    // Calculate spending by month (last 6 months)
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+    const spendingByMonth = await Order.aggregate([
+      {
+        $match: {
+          buyer: new mongoose.Types.ObjectId(userId),
+          status: "paid",
+          createdAt: { $gte: sixMonthsAgo },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" },
+          },
+          totalSpent: { $sum: "$totalAmount" },
+          orderCount: { $sum: 1 },
+        },
+      },
+      {
+        $sort: { "_id.year": 1, "_id.month": 1 },
+      },
+    ]);
+
+    // Get orders with pagination
+    const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+    const orders = await Order.find(matchQuery)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit, 10))
+      .lean();
+
+    // Get order items to find event info for each order
+    const orderIds = orders.map((o) => o._id);
+    const orderItems = await OrderItem.find({ order: { $in: orderIds } })
+      .populate({
+        path: "ticketType",
+        populate: {
+          path: "show",
+          populate: {
+            path: "event",
+            select: "name startDate endDate location",
+          },
+        },
+      })
+      .lean();
+
+    // Map orderItems to orders (get first item's event for each order)
+    const orderEventMap = {};
+    orderItems.forEach((item) => {
+      const orderId = item.order.toString();
+      if (!orderEventMap[orderId] && item.ticketType?.show?.event) {
+        orderEventMap[orderId] = item.ticketType.show.event;
+      }
+    });
+
+    // Get transaction info for each order
+    const transactions = await Transaction.find({ order: { $in: orderIds } })
+      .select(
+        "order amount paymentMethod transactionCode status refundAmount refundReason refundedAt createdAt"
+      )
+      .lean();
+
+    // Map transactions to orders
+    const orderTransactionMap = {};
+    transactions.forEach((txn) => {
+      orderTransactionMap[txn.order.toString()] = txn;
+    });
+
+    const totalOrders = await Order.countDocuments(matchQuery);
+    const totalPages = Math.ceil(totalOrders / parseInt(limit, 10));
+
+    // Format statistics
+    const statistics = {
+      total: 0,
+      pending: { count: 0, amount: 0 },
+      paid: { count: 0, amount: 0 },
+      cancelled: { count: 0, amount: 0 },
+      refunded: { count: 0, amount: 0 },
+    };
+
+    statsAggregation.forEach((stat) => {
+      const status = stat._id;
+      statistics[status] = {
+        count: stat.count,
+        amount: stat.totalAmount,
+      };
+      statistics.total += stat.count;
+    });
+
+    return {
+      success: true,
+      data: {
+        orders: orders.map((order) => {
+          const orderId = order._id.toString();
+          const event = orderEventMap[orderId];
+          const transaction = orderTransactionMap[orderId];
+
+          return {
+            id: orderId,
+            orderCode: order.orderCode,
+            event: event
+              ? {
+                  id: event._id.toString(),
+                  name: event.name,
+                  startDate: event.startDate,
+                  endDate: event.endDate,
+                  location: event.location?.address,
+                }
+              : null,
+            totalAmount: order.totalAmount,
+            status: order.status,
+            transaction: transaction
+              ? {
+                  id: transaction._id.toString(),
+                  amount: transaction.amount,
+                  paymentMethod: transaction.paymentMethod,
+                  transactionCode: transaction.transactionCode,
+                  status: transaction.status,
+                  refundAmount: transaction.refundAmount,
+                  refundReason: transaction.refundReason,
+                  refundedAt: transaction.refundedAt,
+                  paidAt: transaction.createdAt,
+                }
+              : null,
+            createdAt: order.createdAt,
+            updatedAt: order.updatedAt,
+          };
+        }),
+        statistics,
+        spendingByMonth: spendingByMonth.map((item) => ({
+          year: item._id.year,
+          month: item._id.month,
+          totalSpent: item.totalSpent,
+          orderCount: item.orderCount,
+        })),
+        pagination: {
+          currentPage: parseInt(page, 10),
+          totalPages,
+          totalOrders,
+          limit: parseInt(limit, 10),
+        },
+      },
+    };
+  } catch (error) {
+    console.error("[USER MANAGEMENT] Error getting user orders:", error);
+    throw error;
+  }
+};
+
+/**
+ * Lấy danh sách sự kiện đã tạo bởi user với phân trang và thống kê
+ */
+const getUserEvents = async (userId, page = 1, limit = 10, filters = {}) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      const error = new Error("Invalid user ID format");
+      error.status = 400;
+      throw error;
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      const error = new Error("User not found");
+      error.status = 404;
+      throw error;
+    }
+
+    // Build match query
+    const matchQuery = { creator: new mongoose.Types.ObjectId(userId) };
+
+    // Filter by status
+    if (
+      filters.status &&
+      ["draft", "published", "ongoing", "completed", "cancelled"].includes(
+        filters.status
+      )
+    ) {
+      matchQuery.status = filters.status;
+    }
+
+    // Date range filter
+    if (filters.startDate || filters.endDate) {
+      matchQuery.createdAt = {};
+      if (filters.startDate) {
+        matchQuery.createdAt.$gte = new Date(filters.startDate);
+      }
+      if (filters.endDate) {
+        matchQuery.createdAt.$lte = new Date(filters.endDate);
+      }
+    }
+
+    // Statistics aggregation
+    const statsAggregation = await Event.aggregate([
+      { $match: { creator: new mongoose.Types.ObjectId(userId) } },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Get revenue from events
+    const revenueAggregation = await OrderItem.aggregate([
+      {
+        $lookup: {
+          from: "orders",
+          localField: "order",
+          foreignField: "_id",
+          as: "orderData",
+        },
+      },
+      {
+        $unwind: "$orderData",
+      },
+      {
+        $match: {
+          "orderData.status": "paid",
+        },
+      },
+      {
+        $lookup: {
+          from: "tickettypes",
+          localField: "ticketType",
+          foreignField: "_id",
+          as: "ticketTypeData",
+        },
+      },
+      {
+        $unwind: "$ticketTypeData",
+      },
+      {
+        $lookup: {
+          from: "shows",
+          localField: "ticketTypeData.show",
+          foreignField: "_id",
+          as: "showData",
+        },
+      },
+      {
+        $unwind: "$showData",
+      },
+      {
+        $lookup: {
+          from: "events",
+          localField: "showData.event",
+          foreignField: "_id",
+          as: "eventData",
+        },
+      },
+      {
+        $unwind: "$eventData",
+      },
+      {
+        $match: {
+          "eventData.creator": new mongoose.Types.ObjectId(userId),
+        },
+      },
+      {
+        $group: {
+          _id: "$showData.event",
+          totalRevenue: {
+            $sum: { $multiply: ["$quantity", "$priceAtPurchase"] },
+          },
+          orderCount: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const totalRevenue = revenueAggregation.reduce(
+      (sum, item) => sum + item.totalRevenue,
+      0
+    );
+    const totalSoldTickets = revenueAggregation.reduce(
+      (sum, item) => sum + item.orderCount,
+      0
+    );
+
+    // Get events with pagination
+    const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+    const events = await Event.find(matchQuery)
+      .populate("category", "name")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit, 10))
+      .lean();
+
+    // Get ticket sales for each event
+    const eventIds = events.map((e) => e._id);
+    const ticketSales = await OrderItem.aggregate([
+      {
+        $lookup: {
+          from: "orders",
+          localField: "order",
+          foreignField: "_id",
+          as: "orderData",
+        },
+      },
+      {
+        $unwind: "$orderData",
+      },
+      {
+        $match: {
+          "orderData.status": "paid",
+        },
+      },
+      {
+        $lookup: {
+          from: "tickettypes",
+          localField: "ticketType",
+          foreignField: "_id",
+          as: "ticketTypeData",
+        },
+      },
+      {
+        $unwind: "$ticketTypeData",
+      },
+      {
+        $lookup: {
+          from: "shows",
+          localField: "ticketTypeData.show",
+          foreignField: "_id",
+          as: "showData",
+        },
+      },
+      {
+        $unwind: "$showData",
+      },
+      {
+        $match: {
+          "showData.event": { $in: eventIds },
+        },
+      },
+      {
+        $group: {
+          _id: "$showData.event",
+          revenue: { $sum: { $multiply: ["$quantity", "$priceAtPurchase"] } },
+          ticketsSold: { $sum: "$quantity" },
+        },
+      },
+    ]);
+
+    const salesMap = {};
+    ticketSales.forEach((sale) => {
+      salesMap[sale._id.toString()] = {
+        revenue: sale.revenue,
+        ticketsSold: sale.ticketsSold,
+      };
+    });
+
+    const totalEvents = await Event.countDocuments(matchQuery);
+    const totalPages = Math.ceil(totalEvents / parseInt(limit, 10));
+
+    // Format statistics
+    const statistics = {
+      total: 0,
+      draft: 0,
+      published: 0,
+      ongoing: 0,
+      completed: 0,
+      cancelled: 0,
+      totalRevenue,
+      totalSoldTickets,
+    };
+
+    statsAggregation.forEach((stat) => {
+      statistics[stat._id] = stat.count;
+      statistics.total += stat.count;
+    });
+
+    return {
+      success: true,
+      data: {
+        events: events.map((event) => {
+          const eventId = event._id.toString();
+          const sales = salesMap[eventId] || { revenue: 0, ticketsSold: 0 };
+
+          return {
+            id: eventId,
+            name: event.name,
+            slug: event.slug,
+            category: event.category
+              ? {
+                  id: event.category._id.toString(),
+                  name: event.category.name,
+                }
+              : null,
+            status: event.status,
+            startDate: event.startDate,
+            endDate: event.endDate,
+            location: event.location?.address,
+            bannerImage: event.bannerImage,
+            revenue: sales.revenue,
+            ticketsSold: sales.ticketsSold,
+            createdAt: event.createdAt,
+            updatedAt: event.updatedAt,
+          };
+        }),
+        statistics,
+        pagination: {
+          currentPage: parseInt(page, 10),
+          totalPages,
+          totalEvents,
+          limit: parseInt(limit, 10),
+        },
+      },
+    };
+  } catch (error) {
+    console.error("[USER MANAGEMENT] Error getting user events:", error);
+    throw error;
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
@@ -622,4 +1095,6 @@ module.exports = {
   banUser,
   unbanUser,
   deleteUser,
+  getUserOrders,
+  getUserEvents,
 };
