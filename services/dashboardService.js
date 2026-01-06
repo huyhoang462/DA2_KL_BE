@@ -210,8 +210,8 @@ const getDashboardOverview = async () => {
       alerts.push({
         type: "warning",
         priority: "high",
-        message: `You have ${pendingEvents} event(s) waiting for approval`,
-        action: "View pending events",
+        message: `Bạn có ${pendingEvents} sự kiện đang chờ duyệt`,
+        action: "Xem sự kiện chờ duyệt",
         link: "/admin/events/pending",
       });
     }
@@ -226,8 +226,8 @@ const getDashboardOverview = async () => {
       alerts.push({
         type: "error",
         priority: "medium",
-        message: `${failedTransactionsToday} failed transaction(s) today`,
-        action: "View transactions",
+        message: `${failedTransactionsToday} giao dịch thất bại trong hôm nay`,
+        action: "Xem giao dịch",
         link: "/admin/transactions",
       });
     }

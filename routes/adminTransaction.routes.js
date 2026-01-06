@@ -1,7 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const adminTransactionController = require("../controllers/adminTransaction.controller");
-const { authenticate } = require("../middlewares/authentication");
+const {
+  authenticate,
+  userExtractor,
+} = require("../middlewares/authentication");
 const { requireAdmin } = require("../middlewares/authorization");
 
 // Tất cả routes yêu cầu authentication và admin role
@@ -36,6 +39,11 @@ router.get("/:id", adminTransactionController.getTransactionById);
  * @access  Admin
  * @body    { reason: String }
  */
-router.post("/:id/refund", adminTransactionController.refundTransaction);
+router.post(
+  "/:id/refund",
+  userExtractor,
+  requireAdmin,
+  adminTransactionController.refundTransaction
+);
 
 module.exports = router;

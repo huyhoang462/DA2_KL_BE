@@ -75,7 +75,7 @@ const refundTransaction = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
-    const adminId = req.user.id;
+    const adminId = req.user._id;
 
     if (!reason || reason.trim().length === 0) {
       return res.status(400).json({

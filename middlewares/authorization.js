@@ -48,6 +48,8 @@ const requireAdmin = (req, res, next) => {
     return next(error);
   }
 
+  console.log("USER: ", req.user);
+
   if (req.user.role !== "admin") {
     const error = new Error("Access denied. Admin role required");
     error.status = 403;

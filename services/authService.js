@@ -123,7 +123,7 @@ const login = async ({ email, password }) => {
     accessTokenPayload,
     process.env.ACCESS_TOKEN_SECRET,
     {
-      expiresIn: "15m",
+      expiresIn: "2d",
     }
   );
 
@@ -422,19 +422,26 @@ const syncWallet = async ({ userId, walletAddress }) => {
     throw error;
   }
 
-  // Tìm user và update địa chỉ ví
-  // Sử dụng { new: true } để trả về data mới sau khi update
-  const user = await User.findByIdAndUpdate(
-    userId,
-    { walletAddress: walletAddress },
-    { new: true }
-  );
+  // Tìm user hiện tại
+  const user = await User.findById(userId);
 
   if (!user) {
     const error = new Error("User not found");
     error.status = 404;
     throw error;
   }
+
+  // Nếu user đã có wallet address này rồi thì không cần update
+  if (user.walletAddress === walletAddress) {
+    return {
+      message: "Wallet already synced",
+      walletAddress: user.walletAddress,
+    };
+  }
+
+  // Cập nhật wallet address mới
+  user.walletAddress = walletAddress;
+  await user.save();
 
   return {
     message: "Wallet synced successfully",
