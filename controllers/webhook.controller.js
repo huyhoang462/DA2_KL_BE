@@ -203,6 +203,49 @@ const handleMintSuccessWebhook = async (req, res) => {
   }
 };
 
+/**
+ * Webhook: /api/webhooks/tickets-auto-checkin
+ * Body ví dụ:
+ * {
+ *   "ticketIds": ["101", "102", "103"],
+ *   "showId": "SHOW_ABC_2025_01_01",
+ *   "processedAt": "2026-01-04T12:34:56.789Z",
+ *   "txHash": "0xabc123..."
+ * }
+ *
+ * Hiện tại: chỉ ghi log lại payload.
+ */
+const handleTicketsAutoCheckinWebhook = async (req, res) => {
+  try {
+    console.log("\n=== 🎫 TICKETS AUTO CHECK-IN WEBHOOK RECEIVED ===");
+    console.log("Timestamp (server):", new Date().toISOString());
+    console.log("Request body:", req.body);
+
+    const { ticketIds, showId, processedAt, txHash } = req.body || {};
+
+    console.log("➡ ticketIds:", ticketIds);
+    console.log("➡ showId:", showId);
+    console.log("➡ processedAt:", processedAt);
+    console.log("➡ txHash:", txHash);
+
+    return res.status(200).json({
+      success: true,
+      message: "tickets-auto-checkin webhook received and logged",
+    });
+  } catch (error) {
+    console.error(
+      "❌ Error handling tickets-auto-checkin webhook (log only):",
+      error
+    );
+    return res.status(500).json({
+      success: false,
+      message:
+        "Internal server error while processing tickets-auto-checkin webhook",
+    });
+  }
+};
+
 module.exports = {
   handleMintSuccessWebhook,
+  handleTicketsAutoCheckinWebhook,
 };

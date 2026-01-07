@@ -29,7 +29,7 @@ const orderSchema = new mongoose.Schema(
     cancelReason: { type: String }, // ⭐ Lý do cancelled
     cancelledAt: { type: Date }, // ⭐ Thời điểm cancel
     walletAddress: { type: String, required: true },
-    txHash: { type: String, unique: true, sparse: true },
+    txHash: { type: String },
     expiresAt: { type: Date, required: true },
   },
   { timestamps: true }
