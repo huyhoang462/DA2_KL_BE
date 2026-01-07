@@ -250,6 +250,13 @@ const getEventById = async (eventId) => {
  */
 const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
   try {
+    console.log("[ADMIN EVENT SERVICE] Starting updateEventStatus:", {
+      eventId,
+      newStatus,
+      hasReason: !!reason,
+      adminId,
+    });
+
     if (!mongoose.Types.ObjectId.isValid(eventId)) {
       const error = new Error("Invalid event ID format");
       error.status = 400;
@@ -273,10 +280,8 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
       throw error;
     }
 
-    const event = await Event.findById(eventId).populate(
-      "creator",
-      "email fullName"
-    );
+    console.log("[ADMIN EVENT SERVICE] Finding event...");
+    const event = await Event.findById(eventId);
 
     if (!event) {
       const error = new Error("Event not found");
@@ -285,6 +290,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
     }
 
     const oldStatus = event.status;
+    console.log("[ADMIN EVENT SERVICE] Event found, oldStatus:", oldStatus);
 
     // Logic kiểm tra status transition
     if (oldStatus === "completed") {
@@ -311,30 +317,9 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
       event.cancelReason = reason || "admin_cancelled";
     }
 
+    console.log("[ADMIN EVENT SERVICE] Saving event...");
     await event.save();
-
-    // Gửi email thông báo
-    try {
-      if (newStatus === "upcoming" && oldStatus === "pending") {
-        // Event được approve
-        await sendEventApprovedEmail(
-          event.creator.email,
-          event.creator.fullName,
-          event.name
-        );
-      } else if (newStatus === "cancelled") {
-        // Event bị cancel
-        await sendEventCancelledEmail(
-          event.creator.email,
-          event.creator.fullName,
-          event.name,
-          reason || "Cancelled by admin"
-        );
-      }
-      // Rejection email đã được handle ở eventService.updateEventStatus
-    } catch (emailError) {
-      console.error("[ADMIN EVENT] Error sending email:", emailError);
-    }
+    console.log("[ADMIN EVENT SERVICE] Event saved successfully");
 
     return {
       success: true,

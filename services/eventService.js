@@ -1557,24 +1557,40 @@ const incrementEventView = async (eventId) => {
 };
 
 /**
- * Get featured events for banner (5 events)
+ * Get featured events for banner (6 events)
+ * Nếu không đủ 6 featured events, sẽ lấy thêm trending events để đủ 6
  */
 const getFeaturedEvents = async () => {
-  const now = new Date();
-
-  const events = await Event.find({
+  // 1. Lấy featured events (không dùng featuredOrder và featuredUntil vì chưa có data)
+  let featuredEvents = await Event.find({
     featured: true,
-    featuredUntil: { $gte: now },
     status: { $in: ["upcoming", "ongoing"] },
   })
-    .sort({ featuredOrder: 1 })
-    .limit(5)
+    .sort({ views: -1, startDate: 1 }) // Sort theo views giảm dần, sau đó ngày gần nhất
+    .limit(6)
     .populate("category", "name")
     .lean();
 
-  // Get min price for each event
+  // 2. Nếu không đủ 6, lấy thêm trending events (nhiều views)
+  if (featuredEvents.length < 6) {
+    const featuredIds = featuredEvents.map((e) => e._id);
+    const remainingCount = 6 - featuredEvents.length;
+
+    const trendingEvents = await Event.find({
+      _id: { $nin: featuredIds }, // Không lấy trùng
+      status: { $in: ["upcoming", "ongoing"] },
+    })
+      .sort({ views: -1, startDate: 1 }) // Sort theo views giảm dần
+      .limit(remainingCount)
+      .populate("category", "name")
+      .lean();
+
+    featuredEvents = [...featuredEvents, ...trendingEvents];
+  }
+
+  // 3. Get min price for each event
   const eventsWithPrice = await Promise.all(
-    events.map(async (event) => {
+    featuredEvents.map(async (event) => {
       const shows = await Show.find({ event: event._id }).select("_id");
       const showIds = shows.map((s) => s._id);
 
@@ -1597,7 +1613,7 @@ const getFeaturedEvents = async () => {
               name: event.category.name,
             }
           : null,
-        views: event.views,
+        views: event.views || 0,
       };
     })
   );

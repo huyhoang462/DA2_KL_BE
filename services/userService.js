@@ -12,13 +12,13 @@ const createStaffAccount = async (staffData, creator) => {
     throw error;
   }
   if (password.length < 6) {
-    const error = new Error("Password must be at least 6 characters long.");
+    const error = new Error("Mật khẩu cần ít nhất 6 ký tự.");
     error.status = 400;
     throw error;
   }
   const existingUser = await User.findOne({ email });
   if (existingUser) {
-    const error = new Error("Email is already in use.");
+    const error = new Error("Email đã được sử dụng.");
     error.status = 409;
     throw error;
   }
@@ -104,9 +104,7 @@ const updateStaffAccount = async (staffId, updateData, creator) => {
 
   if (updateData.password) {
     if (updateData.password.length < 6) {
-      const error = new Error(
-        "New password must be at least 6 characters long."
-      );
+      const error = new Error("Mật khẩu cần ít nhất 6 ký tự.");
       error.status = 400;
       throw error;
     }
