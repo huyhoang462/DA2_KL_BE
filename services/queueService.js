@@ -87,4 +87,45 @@ const addCheckInJob = async (ticketId) => {
   }
 };
 
-module.exports = { addMintJob, addCheckInJob };
+// ------------------------------------------------------
+// Queue EXPIRE STRATEGY (đồng bộ vé hết hạn lên Blockchain)
+// ------------------------------------------------------
+const expireQueueName = process.env.EXPIRE_QUEUE_NAME || "expire-queue";
+
+const expireQueue = new Queue(expireQueueName, {
+  connection,
+  defaultJobOptions: {
+    removeOnComplete: true,
+    removeOnFail: 5000,
+    attempts: 3,
+  },
+});
+
+/**
+ * Hàm bắn job expire tickets sang Worker
+ * @param {Array<string|number>} ticketIds - Danh sách tokenId của vé
+ * @param {string} [showId] - Id show để log/tracking
+ */
+const addExpireJob = async (ticketIds, showId) => {
+  if (!Array.isArray(ticketIds) || ticketIds.length === 0) return;
+
+  try {
+    const payload = { ticketIds, showId };
+
+    await expireQueue.add("expire-job", payload);
+
+    const counts = await expireQueue.getJobCounts();
+    console.log(
+      `🚀 [Expire Queue] Đã bắn job expire cho ${ticketIds.length} ticket(s) của show ${showId}`
+    );
+    console.log(
+      `📥 [Expire Queue] waiting=${counts.waiting}, active=${
+        counts.active
+      }, delayed=${counts.delayed || 0}, completed=${counts.completed || 0}`
+    );
+  } catch (error) {
+    console.error("❌ [Expire Queue] Lỗi gửi job expire:", error);
+  }
+};
+
+module.exports = { addMintJob, addCheckInJob, addExpireJob };
