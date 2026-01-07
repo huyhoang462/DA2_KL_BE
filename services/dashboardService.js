@@ -245,8 +245,8 @@ const getDashboardOverview = async () => {
       alerts.push({
         type: "info",
         priority: "low",
-        message: `${upcomingSoonEvents} event(s) starting within 3 days`,
-        action: "View upcoming events",
+        message: `${upcomingSoonEvents} sự kiện sắp diễn ra trong 3 ngày`,
+        action: "Xem sự kiện sắp diễn ra",
         link: "/admin/events",
       });
     }
