@@ -1,8 +1,7 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
-const { refreshToken: refreshAccessToken } = require("../services/authService");
 
-//  Trích xuất Token: Lấy chuỗi token từ header "Authorization" và gắn vào request.token
+// Middleware 1: Trích xuất Token từ header "Authorization" và gắn vào request.token
 const tokenExtractor = (request, response, next) => {
   const authorization = request.get("authorization");
   if (authorization && authorization.startsWith("Bearer ")) {
@@ -13,8 +12,9 @@ const tokenExtractor = (request, response, next) => {
   next();
 };
 
-// Middleware 2: Trích xuất User : Xác thực token và tìm user tương ứng, sau đó gắn vào request.user
+// Middleware 2: Xác thực token và tìm user, gắn vào request.user
 const userExtractor = async (request, response, next) => {
+  // Nếu không có token → Lỗi 401
   if (!request.token) {
     const error = new Error("Token missing");
     error.status = 401;
@@ -22,6 +22,7 @@ const userExtractor = async (request, response, next) => {
   }
 
   try {
+    // Verify access token
     const decodedToken = jwt.verify(
       request.token,
       process.env.ACCESS_TOKEN_SECRET
@@ -33,62 +34,36 @@ const userExtractor = async (request, response, next) => {
       return next(error);
     }
 
-    const user = await User.findById(decodedToken.id).select("role");
+    // Tìm user trong database
+    const user = await User.findById(decodedToken.id).select(
+      "role email fullName"
+    );
     if (!user) {
       const error = new Error("User associated with token not found");
       error.status = 401;
       return next(error);
     }
 
+    // Gắn user vào request để các route handler sử dụng
     request.user = user;
     next();
   } catch (error) {
-    // Trường hợp access token hết hạn -> thử dùng refresh token để tự động cấp token mới
+    // Token hết hạn → Frontend sẽ tự động gọi /refresh-token
     if (error.name === "TokenExpiredError") {
-      try {
-        const refreshTokenCookie = request.cookies && request.cookies.jwt;
-
-        if (!refreshTokenCookie) {
-          const err = new Error(
-            "Access token expired and no refresh token provided"
-          );
-          err.status = 401;
-          return next(err);
-        }
-
-        // Gọi logic refresh token đã có trong authService
-        const { accessToken: newAccessToken } = await refreshAccessToken(
-          refreshTokenCookie
-        );
-
-        // Xác thực lại access token mới để lấy thông tin user
-        const decodedNewToken = jwt.verify(
-          newAccessToken,
-          process.env.ACCESS_TOKEN_SECRET
-        );
-
-        const user = await User.findById(decodedNewToken.id).select("role");
-        if (!user) {
-          const err = new Error(
-            "User associated with refreshed token not found"
-          );
-          err.status = 401;
-          return next(err);
-        }
-
-        // Gắn user vào request để các route phía sau sử dụng
-        request.user = user;
-
-        // Gửi lại access token mới cho client (client có thể đọc từ header để cập nhật)
-        response.set("x-access-token", newAccessToken);
-
-        return next();
-      } catch (refreshError) {
-        refreshError.status = refreshError.status || 401;
-        return next(refreshError);
-      }
+      const err = new Error("Token expired");
+      err.status = 401;
+      err.code = "TOKEN_EXPIRED";
+      return next(err);
     }
 
+    // Token invalid
+    if (error.name === "JsonWebTokenError") {
+      const err = new Error("Invalid token");
+      err.status = 401;
+      return next(err);
+    }
+
+    // Other errors
     error.status = 401;
     next(error);
   }

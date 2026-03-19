@@ -155,6 +155,7 @@ const login = async ({ email, password }) => {
 };
 
 const refreshToken = async (token) => {
+  // Kiểm tra có refresh token không
   if (!token) {
     const error = new Error("Refresh token is required");
     error.status = 401;
@@ -162,17 +163,25 @@ const refreshToken = async (token) => {
   }
 
   try {
-    //  Xác thực Refresh Token
+    // Xác thực Refresh Token
     const decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
 
+    // Tìm user trong database
     const user = await User.findById(decoded.id);
     if (!user) {
-      const error = new Error("User not found");
+      const error = new Error("User not found or has been deleted");
       error.status = 403;
       throw error;
     }
 
-    // Tạo Access Token mới
+    // Kiểm tra user status (nếu bị ban thì không cho refresh)
+    if (user.status !== "active") {
+      const error = new Error("User account is not active");
+      error.status = 403;
+      throw error;
+    }
+
+    // Tạo Access Token mới (giữ nguyên thời gian 2 days như login)
     const accessTokenPayload = {
       id: user._id,
       email: user.email,
@@ -182,54 +191,89 @@ const refreshToken = async (token) => {
       accessTokenPayload,
       process.env.ACCESS_TOKEN_SECRET,
       {
-        expiresIn: "15m",
+        expiresIn: "2d", // Giống với login để consistent
       }
     );
 
-    // Trả về Access Token mới
-    // Có thể trả về privyToken mới ở đây nếu cần, nhưng thường chỉ cần lúc login
-    return { accessToken: newAccessToken };
+    // Trả về Access Token mới + user info (để FE update Redux state)
+    return {
+      accessToken: newAccessToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        phone: user.phone,
+        role: user.role,
+      },
+    };
   } catch (err) {
-    const error = new Error("Invalid refresh token");
-    error.status = 403;
-    throw error;
+    // Refresh token hết hạn hoặc invalid
+    if (err.name === "TokenExpiredError") {
+      const error = new Error("Refresh token expired. Please login again");
+      error.status = 403;
+      throw error;
+    }
+
+    if (err.name === "JsonWebTokenError") {
+      const error = new Error("Invalid refresh token");
+      error.status = 403;
+      throw error;
+    }
+
+    // Re-throw error khác
+    throw err;
   }
 };
 
 const registerRequest = async ({ email, password, fullName, role, phone }) => {
+  // Validate required fields
   if (!email || !password || !fullName || !role || !phone) {
     const error = new Error("All fields are required");
     error.status = 400;
     throw error;
   }
 
+  // Validate password length
   if (password.length < 6) {
     const error = new Error("Password must be at least 6 characters long");
     error.status = 400;
     throw error;
   }
 
-  const existingUser = await User.findOne({ email });
-  if (existingUser) {
-    const error = new Error("User already exists");
+  // Validate role (chỉ cho phép customer hoặc organizer đăng ký)
+  if (!["customer", "organizer"].includes(role)) {
+    const error = new Error("Invalid role. Must be 'customer' or 'organizer'");
     error.status = 400;
     throw error;
   }
 
+  // Check email đã tồn tại chưa
+  const existingUser = await User.findOne({ email });
+  if (existingUser) {
+    const error = new Error("Email already registered");
+    error.status = 400;
+    throw error;
+  }
+
+  // Hash password
   const salt = await bcrypt.genSalt(10);
   const passwordHash = await bcrypt.hash(password, salt);
+
+  // Generate OTP (6 digits)
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
+  // Lưu vào Verification collection (tự động xóa sau 10 phút)
   const newVerification = new Verification({
     email,
     passwordHash,
     fullName,
-    role: "user",
+    role, // Lưu role mà user chọn (customer hoặc organizer)
     phone,
     otp,
   });
   await newVerification.save();
 
+  // Gửi email OTP
   await sendVerificationEmail(email, otp);
 
   return {
