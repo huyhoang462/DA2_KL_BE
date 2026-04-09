@@ -24,6 +24,7 @@ const showRoutes = require("./show.routes");
 const postRoutes = require("./post.routes");
 const commentRoutes = require("./comment.routes");
 const contentReportRoutes = require("./contentReport.routes");
+const notificationRoutes = require("./notification.routes");
 
 const initRoutes = (app) => {
   app.use("/api/auth", authRoutes);
@@ -52,5 +53,6 @@ const initRoutes = (app) => {
   app.use("/api/posts", postRoutes);
   app.use("/api/comments", commentRoutes);
   app.use("/api/reports", contentReportRoutes);
+  app.use("/api/notifications", notificationRoutes);
 };
 module.exports = initRoutes;

@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Comment = require("../models/comment");
 const Post = require("../models/post");
+const { createNotificationSafe } = require("./notificationService");
 
 const mapUser = (user) => {
   if (!user) {
@@ -274,6 +275,24 @@ const createComment = async ({ postId, author, data }) => {
     await Comment.findByIdAndUpdate(payload.parentComment, {
       $inc: { replyCount: 1 },
     });
+
+    if (payload.replyToUser?.toString() !== author._id.toString()) {
+      await createNotificationSafe({
+        recipientId: payload.replyToUser,
+        type: "comment_reply",
+        title: "Có phản hồi mới",
+        message: "Bình luận của bạn vừa có phản hồi mới.",
+        priority: "medium",
+        metadata: {
+          postId: postId.toString(),
+          commentId: newComment._id.toString(),
+          parentCommentId: payload.parentComment.toString(),
+          repliedBy: author._id.toString(),
+        },
+        channels: ["in_app"],
+        createdBy: author._id,
+      });
+    }
   }
 
   const populatedComment = await Comment.findById(newComment._id)

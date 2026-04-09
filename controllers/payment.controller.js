@@ -7,6 +7,7 @@ const { addMintJob } = require("../services/queueService");
 const mongoose = require("mongoose");
 const { createTicketsForOrder } = require("../services/ticketService");
 const transactionService = require("../services/transactionService");
+const { createNotificationSafe } = require("../services/notificationService");
 
 const handleVnpayIpn = async (req, res) => {
   try {
@@ -67,7 +68,7 @@ const handleVnpayIpn = async (req, res) => {
       "| Status:",
       order.status,
       "| Amount:",
-      order.totalAmount
+      order.totalAmount,
     );
 
     // Kiểm tra order đã được xử lý chưa
@@ -95,7 +96,7 @@ const handleVnpayIpn = async (req, res) => {
         "🎉 ✅ PAYMENT SUCCESSFUL - Order:",
         orderId,
         "| Transaction:",
-        transactionNo
+        transactionNo,
       );
       return res.status(200).json({ RspCode: "00", Message: "Success" });
     } else if (responseCode === "24") {
@@ -105,7 +106,7 @@ const handleVnpayIpn = async (req, res) => {
         "🚫 USER CANCELLED PAYMENT - Order:",
         orderId,
         "| ResponseCode:",
-        responseCode
+        responseCode,
       );
       return res.status(200).json({ RspCode: "00", Message: "Success" });
     } else {
@@ -115,7 +116,7 @@ const handleVnpayIpn = async (req, res) => {
         "❌ PAYMENT FAILED - Order:",
         orderId,
         "| ResponseCode:",
-        responseCode
+        responseCode,
       );
       return res.status(200).json({ RspCode: "00", Message: "Success" });
     }
@@ -139,14 +140,14 @@ const handleVnpayReturn = async (req, res) => {
     } catch (error) {
       console.error("❌ Verify return error:", error);
       return res.redirect(
-        `${process.env.CLIENT_URL}/payment/failed?message=Invalid+signature`
+        `${process.env.CLIENT_URL}/payment/failed?message=Invalid+signature`,
       );
     }
 
     if (!verify.isVerified) {
       console.error("❌ Invalid return signature");
       return res.redirect(
-        `${process.env.CLIENT_URL}/payment/failed?message=Invalid+signature`
+        `${process.env.CLIENT_URL}/payment/failed?message=Invalid+signature`,
       );
     }
 
@@ -164,24 +165,24 @@ const handleVnpayReturn = async (req, res) => {
       console.log("✅ Payment successful, redirecting to success page");
       // Redirect về trang success với orderId
       return res.redirect(
-        `${process.env.CLIENT_URL}/payment-success/${orderId}`
+        `${process.env.CLIENT_URL}/payment-success/${orderId}`,
       );
     } else if (responseCode === "24") {
       // ⭐ User HỦY thanh toán
       console.log("🚫 User cancelled payment, redirecting to cancelled page");
       return res.redirect(
-        `${process.env.CLIENT_URL}/payment-cancelled?orderId=${orderId}`
+        `${process.env.CLIENT_URL}/payment-cancelled?orderId=${orderId}`,
       );
     } else {
       console.log("❌ Payment failed, redirecting to failed page");
       return res.redirect(
-        `${process.env.CLIENT_URL}/payment-failed?orderId=${orderId}&code=${responseCode}`
+        `${process.env.CLIENT_URL}/payment-failed?orderId=${orderId}&code=${responseCode}`,
       );
     }
   } catch (error) {
     console.error("❌ Error processing return URL:", error);
     return res.redirect(
-      `${process.env.CLIENT_URL}/payment-failed?message=Error`
+      `${process.env.CLIENT_URL}/payment-failed?message=Error`,
     );
   }
 };
@@ -235,12 +236,12 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
         transactionCode: transactionNo,
         status: "success",
       },
-      session
+      session,
     );
 
     // 3. Lấy OrderItems (Dùng biến này tính toán luôn, không query lại)
     const existingItems = await OrderItem.find({ order: order._id }).session(
-      session
+      session,
     );
 
     if (existingItems.length === 0) {
@@ -251,16 +252,16 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
     // Sử dụng luôn existingItems, không cần query lại DB
     totalTicketsToMint = existingItems.reduce(
       (sum, item) => sum + item.quantity,
-      0
+      0,
     );
 
     console.log(
-      `📊 [MINT CALC] Order ${order._id}: total tickets to mint = ${totalTicketsToMint}`
+      `📊 [MINT CALC] Order ${order._id}: total tickets to mint = ${totalTicketsToMint}`,
     );
 
     // 4. Kiểm tra Tickets đã tồn tại chưa
     const existingTickets = await Ticket.find({ order: order._id }).session(
-      session
+      session,
     );
 
     if (existingTickets.length > 0) {
@@ -278,7 +279,7 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
     const tickets = await createTicketsForOrder(
       order._id,
       order.buyer,
-      session
+      session,
     );
 
     console.log(`🎫 Created ${tickets.length} tickets`);
@@ -294,36 +295,52 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
     try {
       if (buyerWallet && totalTicketsToMint > 0) {
         console.log(
-          `💳 [MINT QUEUE] Kích hoạt Mint NFT cho Order ${order._id} -> Wallet: ${buyerWallet} | Tickets: ${totalTicketsToMint}`
+          `💳 [MINT QUEUE] Kích hoạt Mint NFT cho Order ${order._id} -> Wallet: ${buyerWallet} | Tickets: ${totalTicketsToMint}`,
         );
 
         // 4.1 Cập nhật mintStatus của tất cả tickets thuộc order này sang "pending"
         const updateResult = await Ticket.updateMany(
           { order: order._id, mintStatus: "unminted" },
-          { $set: { mintStatus: "pending" } }
+          { $set: { mintStatus: "pending" } },
         );
 
         const modifiedCount =
           updateResult.modifiedCount ?? updateResult.nModified ?? 0;
 
         console.log(
-          `📌 [MINT STATUS] Order ${order._id}: set mintStatus=pending cho ${modifiedCount} ticket(s)`
+          `📌 [MINT STATUS] Order ${order._id}: set mintStatus=pending cho ${modifiedCount} ticket(s)`,
         );
 
         // 4.2 Gửi job Mint sang Worker
         await addMintJob(buyerWallet, totalTicketsToMint, order._id.toString());
       } else {
         console.warn(
-          `⚠️ Bỏ qua Mint: Không tìm thấy ví hoặc số lượng vé = 0. (Wallet: ${buyerWallet})`
+          `⚠️ Bỏ qua Mint: Không tìm thấy ví hoặc số lượng vé = 0. (Wallet: ${buyerWallet})`,
         );
       }
     } catch (queueError) {
       // Chỉ log lỗi queue, không throw để tránh rollback lại transaction thanh toán
       console.error(
         "❌ Lỗi đẩy Job Mint (User đã thanh toán nhưng chưa Mint):",
-        queueError
+        queueError,
       );
     }
+
+    await createNotificationSafe({
+      recipientId: order.buyer,
+      type: "payment_success",
+      title: "Thanh toan thanh cong",
+      message: `Don hang ${order.orderCode || order._id} da thanh toan thanh cong.`,
+      priority: "high",
+      metadata: {
+        orderId: order._id.toString(),
+        orderCode: order.orderCode || null,
+        amount: order.totalAmount,
+        transactionNo,
+        bankCode,
+      },
+      channels: ["in_app"],
+    });
 
     // ✅ RETURN KẾT QUẢ (Biến tickets, transaction vẫn còn nhìn thấy được)
     return { tickets, orderItems: existingItems, transaction };
@@ -369,12 +386,12 @@ const processFailedPayment = async (order, responseCode = null) => {
         transactionCode: null,
         status: "failed",
       },
-      session
+      session,
     );
 
     // 3. Release tickets
     const orderItems = await OrderItem.find({ order: order._id }).session(
-      session
+      session,
     );
 
     let totalTicketsReleased = 0;
@@ -382,17 +399,33 @@ const processFailedPayment = async (order, responseCode = null) => {
       await TicketType.findByIdAndUpdate(
         item.ticketType,
         { $inc: { quantitySold: -item.quantity } },
-        { session }
+        { session },
       );
       totalTicketsReleased += item.quantity;
     }
 
     console.log(`✅ Order ${order._id} marked as FAILED`);
     console.log(
-      `🎫 Released ${totalTicketsReleased} tickets back to inventory`
+      `🎫 Released ${totalTicketsReleased} tickets back to inventory`,
     );
 
     await session.commitTransaction();
+
+    await createNotificationSafe({
+      recipientId: order.buyer,
+      type: "payment_failed",
+      title: "Thanh toan that bai",
+      message: `Don hang ${order.orderCode || order._id} thanh toan that bai.`,
+      priority: "high",
+      metadata: {
+        orderId: order._id.toString(),
+        orderCode: order.orderCode || null,
+        amount: order.totalAmount,
+        responseCode,
+        failureReason: order.failureReason,
+      },
+      channels: ["in_app"],
+    });
   } catch (error) {
     console.error("❌ Error processing failed payment:", error);
 
@@ -439,12 +472,12 @@ const processCancelledPayment = async (order) => {
         transactionCode: null,
         status: "cancelled", // ⭐ Status khác với failed
       },
-      session
+      session,
     );
 
     // 3. Release tickets
     const orderItems = await OrderItem.find({ order: order._id }).session(
-      session
+      session,
     );
 
     let totalTicketsReleased = 0;
@@ -452,17 +485,31 @@ const processCancelledPayment = async (order) => {
       await TicketType.findByIdAndUpdate(
         item.ticketType,
         { $inc: { quantitySold: -item.quantity } },
-        { session }
+        { session },
       );
       totalTicketsReleased += item.quantity;
     }
 
     console.log(`✅ Order ${order._id} marked as CANCELLED`);
     console.log(
-      `🎫 Released ${totalTicketsReleased} tickets back to inventory`
+      `🎫 Released ${totalTicketsReleased} tickets back to inventory`,
     );
 
     await session.commitTransaction();
+
+    await createNotificationSafe({
+      recipientId: order.buyer,
+      type: "payment_cancelled",
+      title: "Thanh toan da huy",
+      message: `Ban da huy thanh toan cho don hang ${order.orderCode || order._id}.`,
+      priority: "medium",
+      metadata: {
+        orderId: order._id.toString(),
+        orderCode: order.orderCode || null,
+        amount: order.totalAmount,
+      },
+      channels: ["in_app"],
+    });
 
     return {
       success: true,
@@ -545,7 +592,7 @@ const handleFinalizeOrder = async (req, res) => {
       const result = await processSuccessfulPayment(
         order,
         vnp_TransactionNo,
-        vnp_BankCode
+        vnp_BankCode,
       );
 
       return res.status(200).json({

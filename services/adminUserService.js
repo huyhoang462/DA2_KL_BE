@@ -11,6 +11,7 @@ const {
   sendUserBannedEmail,
   sendUserUnbannedEmail,
 } = require("../utils/mailer");
+const { createNotificationSafe } = require("./notificationService");
 
 /**
  * Lấy danh sách tất cả người dùng với filters và pagination
@@ -480,6 +481,20 @@ const banUser = async (userId, reason, adminId) => {
       // Không throw error để không làm fail toàn bộ request
     }
 
+    await createNotificationSafe({
+      recipientId: user._id,
+      type: "account_banned",
+      title: "Tai khoan bi khoa",
+      message: `Tai khoan cua ban da bi khoa. Ly do: ${reason}`,
+      priority: "critical",
+      metadata: {
+        userId: user._id.toString(),
+        reason,
+      },
+      channels: ["in_app", "email"],
+      createdBy: adminId,
+    });
+
     return {
       success: true,
       message: "User has been banned successfully",
@@ -538,6 +553,20 @@ const unbanUser = async (userId, adminId) => {
     } catch (emailError) {
       console.error("[USER MANAGEMENT] Error sending unban email:", emailError);
     }
+
+    await createNotificationSafe({
+      recipientId: user._id,
+      type: "account_unbanned",
+      title: "Tai khoan da duoc mo khoa",
+      message: "Tai khoan cua ban da duoc kich hoat lai.",
+      priority: "high",
+      metadata: {
+        userId: user._id.toString(),
+        previousBanReason,
+      },
+      channels: ["in_app", "email"],
+      createdBy: adminId,
+    });
 
     return {
       success: true,
@@ -733,7 +762,7 @@ const getUserOrders = async (userId, page = 1, limit = 10, filters = {}) => {
     // Get transaction info for each order
     const transactions = await Transaction.find({ order: { $in: orderIds } })
       .select(
-        "order amount paymentMethod transactionCode status refundAmount refundReason refundedAt createdAt"
+        "order amount paymentMethod transactionCode status refundAmount refundReason refundedAt createdAt",
       )
       .lean();
 
@@ -849,7 +878,7 @@ const getUserEvents = async (userId, page = 1, limit = 10, filters = {}) => {
     if (
       filters.status &&
       ["draft", "published", "ongoing", "completed", "cancelled"].includes(
-        filters.status
+        filters.status,
       )
     ) {
       matchQuery.status = filters.status;
@@ -946,11 +975,11 @@ const getUserEvents = async (userId, page = 1, limit = 10, filters = {}) => {
 
     const totalRevenue = revenueAggregation.reduce(
       (sum, item) => sum + item.totalRevenue,
-      0
+      0,
     );
     const totalSoldTickets = revenueAggregation.reduce(
       (sum, item) => sum + item.orderCount,
-      0
+      0,
     );
 
     // Get events with pagination

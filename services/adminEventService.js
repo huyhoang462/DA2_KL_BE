@@ -8,8 +8,10 @@ const Order = require("../models/order");
 const Transaction = require("../models/transaction");
 const {
   sendEventApprovedEmail,
+  sendEventRejectionEmail,
   sendEventCancelledEmail,
 } = require("../utils/mailer");
+const { createNotificationSafe } = require("./notificationService");
 
 /**
  * Lấy danh sách tất cả events với filters và pagination
@@ -274,14 +276,17 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
 
     if (!validStatuses.includes(newStatus)) {
       const error = new Error(
-        `Invalid status. Must be one of: ${validStatuses.join(", ")}`
+        `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
       );
       error.status = 400;
       throw error;
     }
 
     console.log("[ADMIN EVENT SERVICE] Finding event...");
-    const event = await Event.findById(eventId);
+    const event = await Event.findById(eventId).populate(
+      "creator",
+      "_id email fullName",
+    );
 
     if (!event) {
       const error = new Error("Event not found");
@@ -321,6 +326,102 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
     await event.save();
     console.log("[ADMIN EVENT SERVICE] Event saved successfully");
 
+    if (event.creator?._id) {
+      if (newStatus === "upcoming") {
+        try {
+          await sendEventApprovedEmail(
+            event.creator.email,
+            event.creator.fullName,
+            event.name,
+          );
+        } catch (emailError) {
+          console.error(
+            "[ADMIN EVENT] Error sending approval email:",
+            emailError,
+          );
+        }
+
+        await createNotificationSafe({
+          recipientId: event.creator._id,
+          type: "event_approved",
+          title: "Sự kiện được duyệt",
+          message: `Sự kiện \"${event.name}\" đã được duyệt và mở bán.`,
+          priority: "high",
+          metadata: {
+            eventId: event._id.toString(),
+            oldStatus,
+            newStatus,
+          },
+          channels: ["in_app", "email"],
+          createdBy: adminId,
+        });
+      }
+
+      if (newStatus === "rejected") {
+        try {
+          await sendEventRejectionEmail(
+            event.creator.email,
+            event.creator.fullName,
+            event.name,
+            event.rejectionReason,
+          );
+        } catch (emailError) {
+          console.error(
+            "[ADMIN EVENT] Error sending rejection email:",
+            emailError,
+          );
+        }
+
+        await createNotificationSafe({
+          recipientId: event.creator._id,
+          type: "event_rejected",
+          title: "Sự kiện bị từ chối",
+          message: `Sự kiện \"${event.name}\" bị từ chối. Lý do: ${event.rejectionReason}.`,
+          priority: "high",
+          metadata: {
+            eventId: event._id.toString(),
+            oldStatus,
+            newStatus,
+            reason: event.rejectionReason,
+          },
+          channels: ["in_app", "email"],
+          createdBy: adminId,
+        });
+      }
+
+      if (newStatus === "cancelled") {
+        try {
+          await sendEventCancelledEmail(
+            event.creator.email,
+            event.creator.fullName,
+            event.name,
+            event.cancelReason || "Event has been cancelled by admin",
+          );
+        } catch (emailError) {
+          console.error(
+            "[ADMIN EVENT] Error sending cancellation email:",
+            emailError,
+          );
+        }
+
+        await createNotificationSafe({
+          recipientId: event.creator._id,
+          type: "event_cancelled",
+          title: "Sự kiện bị hủy",
+          message: `Sự kiện \"${event.name}\" đã bị hủy.`,
+          priority: "critical",
+          metadata: {
+            eventId: event._id.toString(),
+            oldStatus,
+            newStatus,
+            reason: event.cancelReason || null,
+          },
+          channels: ["in_app", "email"],
+          createdBy: adminId,
+        });
+      }
+    }
+
     return {
       success: true,
       message: `Event status updated from ${oldStatus} to ${newStatus} successfully`,
@@ -345,7 +446,7 @@ const setFeaturedEvent = async (
   eventId,
   featured,
   featuredOrder = null,
-  featuredUntil = null
+  featuredUntil = null,
 ) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(eventId)) {
@@ -365,7 +466,7 @@ const setFeaturedEvent = async (
     // Chỉ upcoming/ongoing events mới có thể featured
     if (!["upcoming", "ongoing"].includes(event.status)) {
       const error = new Error(
-        "Only upcoming or ongoing events can be featured"
+        "Only upcoming or ongoing events can be featured",
       );
       error.status = 400;
       throw error;
@@ -418,7 +519,7 @@ const deleteEvent = async (eventId, adminId, hardDelete = false) => {
 
     const event = await Event.findById(eventId).populate(
       "creator",
-      "email fullName"
+      "email fullName",
     );
 
     if (!event) {
@@ -445,7 +546,7 @@ const deleteEvent = async (eventId, adminId, hardDelete = false) => {
 
     if (hasOrders && hardDelete) {
       const error = new Error(
-        "Cannot hard delete event with paid orders. Use soft delete instead."
+        "Cannot hard delete event with paid orders. Use soft delete instead.",
       );
       error.status = 400;
       throw error;
@@ -462,7 +563,7 @@ const deleteEvent = async (eventId, adminId, hardDelete = false) => {
         const showIds = shows.map((show) => show._id);
 
         await TicketType.deleteMany({ show: { $in: showIds } }).session(
-          session
+          session,
         );
         await Show.deleteMany({ event: eventId }).session(session);
         await Event.findByIdAndDelete(eventId).session(session);
@@ -491,11 +592,26 @@ const deleteEvent = async (eventId, adminId, hardDelete = false) => {
           event.creator.email,
           event.creator.fullName,
           event.name,
-          "Event has been cancelled by admin"
+          "Event has been cancelled by admin",
         );
       } catch (emailError) {
         console.error("[ADMIN EVENT] Error sending email:", emailError);
       }
+
+      await createNotificationSafe({
+        recipientId: event.creator._id,
+        type: "event_cancelled",
+        title: "Su kien bi huy",
+        message: `Su kien \"${event.name}\" da bi huy boi admin.`,
+        priority: "critical",
+        metadata: {
+          eventId: event._id.toString(),
+          newStatus: event.status,
+          reason: event.cancelReason,
+        },
+        channels: ["in_app", "email"],
+        createdBy: adminId,
+      });
 
       return {
         success: true,

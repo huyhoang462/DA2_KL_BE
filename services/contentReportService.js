@@ -3,6 +3,7 @@ const Report = require("../models/report");
 const Post = require("../models/post");
 const Comment = require("../models/comment");
 const User = require("../models/user");
+const { createNotificationSafe } = require("./notificationService");
 
 const VALID_REASONS = ["spam", "inappropriate", "scam", "harassment", "other"];
 const VALID_STATUS = ["pending", "reviewing", "resolved", "dismissed"];
@@ -385,6 +386,24 @@ const reviewReport = async ({ reportId, userId, userRole, data }) => {
   }
 
   await report.save();
+
+  await createNotificationSafe({
+    recipientId: report.reporter,
+    type: "report_reviewed",
+    title: "Bao cao da duoc xu ly",
+    message: `Bao cao cua ban da duoc xu ly voi ket qua: ${report.status}.`,
+    priority: "medium",
+    metadata: {
+      reportId: report._id.toString(),
+      targetType: report.targetType,
+      targetId: report.targetId?.toString?.() || report.targetId,
+      status: report.status,
+      action: report.action || null,
+      reviewNote: report.reviewNote || null,
+    },
+    channels: ["in_app"],
+    createdBy: userId,
+  });
 
   // Populate after save
   const populatedReport = await Report.findById(report._id)

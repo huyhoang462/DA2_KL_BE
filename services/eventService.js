@@ -23,7 +23,7 @@ const cleanupOrphanedData = async () => {
     const orphanedShowIds = [];
     for (const show of allShows) {
       const eventExists = await Event.exists({ _id: show.event }).session(
-        session
+        session,
       );
       if (!eventExists) {
         orphanedShowIds.push(show._id);
@@ -34,20 +34,20 @@ const cleanupOrphanedData = async () => {
     if (orphanedShowIds.length > 0) {
       const deleteShowsResult = await Show.deleteMany(
         { _id: { $in: orphanedShowIds } },
-        { session }
+        { session },
       );
       deletedShowsCount = deleteShowsResult.deletedCount;
     }
 
     const allTicketTypes = await TicketType.find(
       {},
-      { _id: 1, show: 1 }
+      { _id: 1, show: 1 },
     ).session(session);
 
     const orphanedTicketTypeIds = [];
     for (const ticketType of allTicketTypes) {
       const showExists = await Show.exists({ _id: ticketType.show }).session(
-        session
+        session,
       );
       if (!showExists) {
         orphanedTicketTypeIds.push(ticketType._id);
@@ -58,7 +58,7 @@ const cleanupOrphanedData = async () => {
     if (orphanedTicketTypeIds.length > 0) {
       const deleteTicketTypesResult = await TicketType.deleteMany(
         { _id: { $in: orphanedTicketTypeIds } },
-        { session }
+        { session },
       );
       deletedTicketTypesCount = deleteTicketTypesResult.deletedCount;
     }
@@ -496,7 +496,7 @@ const updateEvent = async (eventId, updateData) => {
 
         if (!existingPayoutMethod) {
           const error = new Error(
-            "PayoutMethod not found or not belong to current user"
+            "PayoutMethod not found or not belong to current user",
           );
           error.status = 404;
           throw error;
@@ -515,7 +515,7 @@ const updateEvent = async (eventId, updateData) => {
       await Event.findByIdAndUpdate(
         eventId,
         { payoutMethod: payoutMethodId },
-        { session }
+        { session },
       );
     }
 
@@ -536,7 +536,7 @@ const updateEvent = async (eventId, updateData) => {
               $in: deleteIds.map((id) => new mongoose.Types.ObjectId(id)),
             },
           },
-          { session }
+          { session },
         );
 
         // Then delete shows
@@ -547,7 +547,7 @@ const updateEvent = async (eventId, updateData) => {
             },
             event: eventId,
           },
-          { session }
+          { session },
         );
       }
 
@@ -563,7 +563,7 @@ const updateEvent = async (eventId, updateData) => {
 
         if (!existingShow) {
           const error = new Error(
-            `Show ${id} not found or doesn't belong to this event`
+            `Show ${id} not found or doesn't belong to this event`,
           );
           error.status = 404;
           throw error;
@@ -580,7 +580,7 @@ const updateEvent = async (eventId, updateData) => {
 
           if (showStart >= showEnd) {
             const error = new Error(
-              `Invalid time range for show ${existingShow.name}`
+              `Invalid time range for show ${existingShow.name}`,
             );
             error.status = 400;
             throw error;
@@ -597,7 +597,7 @@ const updateEvent = async (eventId, updateData) => {
         // Validate required fields
         if (!showData.name || !showData.startTime || !showData.endTime) {
           const error = new Error(
-            "Show must have name, startTime, and endTime"
+            "Show must have name, startTime, and endTime",
           );
           error.status = 400;
           throw error;
@@ -608,7 +608,7 @@ const updateEvent = async (eventId, updateData) => {
         const showEnd = new Date(showData.endTime);
         if (showStart >= showEnd) {
           const error = new Error(
-            `Invalid time range for new show ${showData.name}`
+            `Invalid time range for new show ${showData.name}`,
           );
           error.status = 400;
           throw error;
@@ -655,7 +655,7 @@ const updateEvent = async (eventId, updateData) => {
               $in: deleteIds.map((id) => new mongoose.Types.ObjectId(id)),
             },
           },
-          { session }
+          { session },
         );
       }
 
@@ -672,7 +672,7 @@ const updateEvent = async (eventId, updateData) => {
           existingTicket.show.event.toString() !== eventId
         ) {
           const error = new Error(
-            `Ticket ${id} not found or doesn't belong to this event`
+            `Ticket ${id} not found or doesn't belong to this event`,
           );
           error.status = 404;
           throw error;
@@ -691,7 +691,7 @@ const updateEvent = async (eventId, updateData) => {
           newTicketData.quantityTotal == null
         ) {
           const error = new Error(
-            "New ticket must have showId, name, price, and quantityTotal"
+            "New ticket must have showId, name, price, and quantityTotal",
           );
           error.status = 400;
           throw error;
@@ -705,7 +705,7 @@ const updateEvent = async (eventId, updateData) => {
 
         if (!show) {
           const error = new Error(
-            `Show ${newTicketData.showId} not found or doesn't belong to this event`
+            `Show ${newTicketData.showId} not found or doesn't belong to this event`,
           );
           error.status = 404;
           throw error;
@@ -808,7 +808,7 @@ const createEvent = async (data, creatorId) => {
       const error = new Error(
         `Show '${
           show.name || ""
-        }' must have name, startTime, endTime, and at least one ticket type.`
+        }' must have name, startTime, endTime, and at least one ticket type.`,
       );
       error.status = 400;
       throw error;
@@ -823,7 +823,7 @@ const createEvent = async (data, creatorId) => {
       " - ",
       eventStart,
       " ",
-      eventEnd
+      eventEnd,
     );
 
     if (showStart > showEnd || showStart < eventStart || showEnd > eventEnd) {
@@ -838,7 +838,7 @@ const createEvent = async (data, creatorId) => {
         ticket.quantityTotal == null
       ) {
         const error = new Error(
-          `Ticket type in show '${show.name}' is missing required fields (name, price, quantityTotal).`
+          `Ticket type in show '${show.name}' is missing required fields (name, price, quantityTotal).`,
         );
         error.status = 400;
         throw error;
@@ -878,7 +878,7 @@ const createEvent = async (data, creatorId) => {
 
       if (!existingPayoutMethod) {
         const error = new Error(
-          "PayoutMethod not found or not belong to current user"
+          "PayoutMethod not found or not belong to current user",
         );
         error.status = 404;
         throw error;
@@ -954,7 +954,7 @@ const createEvent = async (data, creatorId) => {
       throw e;
     }
     const error = new Error(
-      "Creating event failed, the operation was rolled back."
+      "Creating event failed, the operation was rolled back.",
     );
     error.status = 500;
     throw error;
@@ -1079,7 +1079,7 @@ const updateEventStatus = async (eventId, status, reason = null) => {
 
   if (!validStatuses.includes(status)) {
     const error = new Error(
-      `Invalid status. Must be one of: ${validStatuses.join(", ")}`
+      `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
     );
     error.status = 400;
     throw error;
@@ -1088,7 +1088,7 @@ const updateEventStatus = async (eventId, status, reason = null) => {
   // Tìm và cập nhật event
   const event = await Event.findById(eventId).populate(
     "creator",
-    "email fullName"
+    "email fullName",
   );
 
   if (!event) {
@@ -1122,7 +1122,7 @@ const updateEventStatus = async (eventId, status, reason = null) => {
           event.creator.email,
           event.creator.fullName,
           event.name,
-          reason || "No specific reason provided"
+          reason || "No specific reason provided",
         );
       } catch (emailError) {
         console.error("Error sending rejection email:", emailError);
@@ -1210,9 +1210,9 @@ const getDashboardOverview = async (eventId) => {
           .filter(
             (item) =>
               item.order &&
-              (item.order.status === "paid" || item.order.status === "pending")
+              (item.order.status === "paid" || item.order.status === "pending"),
           )
-          .map((item) => item.order._id.toString())
+          .map((item) => item.order._id.toString()),
       ),
     ];
 
@@ -1226,7 +1226,7 @@ const getDashboardOverview = async (eventId) => {
 
     const totalRevenue = paidOrders.reduce(
       (sum, order) => sum + order.totalAmount,
-      0
+      0,
     );
 
     const totalOrders = paidOrders.length;
@@ -1235,15 +1235,15 @@ const getDashboardOverview = async (eventId) => {
     // Tính tổng tickets sold và checked in
     const totalTickets = ticketTypes.reduce(
       (sum, tt) => sum + tt.quantityTotal,
-      0
+      0,
     );
     const ticketsSold = ticketTypes.reduce(
       (sum, tt) => sum + tt.quantitySold,
-      0
+      0,
     );
     const ticketsCheckedIn = ticketTypes.reduce(
       (sum, tt) => sum + tt.quantityCheckedIn,
-      0
+      0,
     );
 
     // Conversion rate: (paid orders / (paid + failed + cancelled)) * 100
@@ -1265,20 +1265,20 @@ const getDashboardOverview = async (eventId) => {
     const ticketBreakdownByShow = await Promise.all(
       shows.map(async (show) => {
         const showTicketTypes = ticketTypes.filter(
-          (tt) => tt.show.toString() === show._id.toString()
+          (tt) => tt.show.toString() === show._id.toString(),
         );
 
         const totalShowTickets = showTicketTypes.reduce(
           (sum, tt) => sum + tt.quantityTotal,
-          0
+          0,
         );
         const soldShowTickets = showTicketTypes.reduce(
           (sum, tt) => sum + tt.quantitySold,
-          0
+          0,
         );
         const checkedInShowTickets = showTicketTypes.reduce(
           (sum, tt) => sum + tt.quantityCheckedIn,
-          0
+          0,
         );
 
         return {
@@ -1294,7 +1294,7 @@ const getDashboardOverview = async (eventId) => {
               ? ((soldShowTickets / totalShowTickets) * 100).toFixed(2)
               : 0,
         };
-      })
+      }),
     );
 
     // 7. Ticket breakdown by type
@@ -1371,7 +1371,7 @@ const getRevenueAnalytics = async (
   eventId,
   startDate = null,
   endDate = null,
-  groupBy = "day"
+  groupBy = "day",
 ) => {
   try {
     // 1. Kiểm tra event
@@ -1462,14 +1462,14 @@ const getRevenueAnalytics = async (
       if (groupBy === "hour") {
         dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
           2,
-          "0"
+          "0",
         )}-${String(date.getDate()).padStart(2, "0")} ${String(
-          date.getHours()
+          date.getHours(),
         ).padStart(2, "0")}:00:00`;
       } else {
         dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
           2,
-          "0"
+          "0",
         )}-${String(date.getDate()).padStart(2, "0")}`;
       }
 
@@ -1490,11 +1490,11 @@ const getRevenueAnalytics = async (
     // 8. Tính summary
     const totalRevenue = aggregationResult.reduce(
       (sum, item) => sum + item.revenue,
-      0
+      0,
     );
     const totalOrders = aggregationResult.reduce(
       (sum, item) => sum + item.orderCount,
-      0
+      0,
     );
     const totalTickets = validTickets.length;
 
@@ -1505,7 +1505,7 @@ const getRevenueAnalytics = async (
     const peakDate =
       chartData.length > 0
         ? chartData.reduce((max, item) =>
-            item.revenue > max.revenue ? item : max
+            item.revenue > max.revenue ? item : max,
           )
         : null;
 
@@ -1615,7 +1615,7 @@ const getFeaturedEvents = async () => {
           : null,
         views: event.views || 0,
       };
-    })
+    }),
   );
 
   return eventsWithPrice;
