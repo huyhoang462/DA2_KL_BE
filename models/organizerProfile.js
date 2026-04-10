@@ -9,57 +9,37 @@ const organizerProfileSchema = new mongoose.Schema(
       unique: true, // Mỗi user chỉ có 1 organizer profile
     },
 
-    // Thông tin công ty/tổ chức
-    companyName: {
+    // Tên hiển thị cho organizer (có thể khác với fullName tài khoản)
+    displayName: {
       type: String,
       trim: true,
+      maxlength: 120,
     },
 
-    taxId: {
-      type: String, // Mã số thuế (optional)
-      trim: true,
-    },
-
-    businessLicense: {
-      type: String, // URL giấy phép kinh doanh (từ Cloudinary)
-    },
-
-    // Thông tin thanh toán (để nhận tiền từ bán vé)
-    bankAccount: {
-      bankName: String,
-      accountNumber: String,
-      accountHolder: String,
-    },
-
-    // Mô tả/giới thiệu về organizer
-    bio: {
+    // Email liên hệ, cho phép khác email đăng ký nếu organizer muốn
+    contactEmail: {
       type: String,
+      trim: true,
+      lowercase: true,
+    },
+
+    phone: {
+      type: String,
+      trim: true,
+      maxlength: 30,
+    },
+
+    address: {
+      type: String,
+      trim: true,
+      maxlength: 255,
+    },
+
+    about: {
+      type: String,
+      trim: true,
       maxlength: 1000,
     },
-
-    // Social media links
-    website: String,
-    facebook: String,
-    instagram: String,
-    twitter: String,
-
-    // Verification status (cho tương lai nếu cần admin duyệt)
-    verificationStatus: {
-      type: String,
-      enum: ["incomplete", "pending", "approved", "rejected"],
-      default: "incomplete",
-    },
-
-    verificationNote: String, // Ghi chú từ admin khi duyệt
-    verifiedAt: Date,
-    verifiedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-
-    // Stats (optional)
-    totalEvents: { type: Number, default: 0 },
-    totalTicketsSold: { type: Number, default: 0 },
   },
   {
     timestamps: true,
@@ -68,7 +48,6 @@ const organizerProfileSchema = new mongoose.Schema(
 
 // Index
 organizerProfileSchema.index({ user: 1 });
-organizerProfileSchema.index({ verificationStatus: 1 });
 
 // Transform JSON
 organizerProfileSchema.set("toJSON", {

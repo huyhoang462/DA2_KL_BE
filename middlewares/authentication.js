@@ -25,7 +25,7 @@ const userExtractor = async (request, response, next) => {
     // Verify access token
     const decodedToken = jwt.verify(
       request.token,
-      process.env.ACCESS_TOKEN_SECRET
+      process.env.ACCESS_TOKEN_SECRET,
     );
 
     if (!decodedToken.id) {
@@ -36,7 +36,7 @@ const userExtractor = async (request, response, next) => {
 
     // Tìm user trong database
     const user = await User.findById(decodedToken.id).select(
-      "role email fullName"
+      "role email fullName phone",
     );
     if (!user) {
       const error = new Error("User associated with token not found");
