@@ -11,6 +11,13 @@ const {
   syncWallet,
 } = require("../services/authService");
 
+const REFRESH_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: false,
+  sameSite: "lax",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
 const handleLogin = async (req, res, next) => {
   try {
     const { email, password } = req.body;
@@ -24,14 +31,11 @@ const handleLogin = async (req, res, next) => {
       "[AUTH LOGIN SUCCESS] user=%s role=%s accessToken=%s",
       user.id,
       user.role,
-      accessToken
+      accessToken,
     );
 
     res.cookie("jwt", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
+      ...REFRESH_COOKIE_OPTIONS,
     });
 
     // 2. Gửi Access Token và thông tin user trong body JSON
@@ -59,7 +63,7 @@ const handleStaffLogin = async (req, res, next) => {
       console.warn(
         "[STAFF LOGIN DENIED] email=%s role=%s",
         user.email,
-        user.role
+        user.role,
       );
       const error = new Error("Access denied. Staff role required");
       error.status = 403;
@@ -67,17 +71,14 @@ const handleStaffLogin = async (req, res, next) => {
     }
 
     res.cookie("jwt", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
+      ...REFRESH_COOKIE_OPTIONS,
     });
 
     console.log(
       "[STAFF LOGIN SUCCESS] user=%s role=%s accessToken=%s",
       user.id,
       user.role,
-      accessToken
+      accessToken,
     );
 
     res.status(200).json({
@@ -89,7 +90,7 @@ const handleStaffLogin = async (req, res, next) => {
     console.error(
       "[STAFF LOGIN ERROR] email=%s error=%s",
       req.body.email,
-      error.message
+      error.message,
     );
     next(error);
   }
@@ -102,12 +103,23 @@ const handleRefreshToken = async (req, res, next) => {
     // 1. Lấy refresh token từ cookie
     const token = req.cookies.jwt;
 
+    // Trả về 401 gọn để FE logout ngay, tránh quăng stack trace dày.
+    if (!token) {
+      return res.status(401).json({
+        message: "Refresh token is required",
+        code: "REFRESH_TOKEN_REQUIRED",
+      });
+    }
+
     // 2. Gọi service
-    const { accessToken } = await refreshToken(token);
+    const { accessToken, user } = await refreshToken(token);
 
     // 3. Gửi access token mới về cho client
-    res.status(200).json({ accessToken });
+    res.status(200).json({ accessToken, user });
   } catch (error) {
+    if (error.status === 403) {
+      res.clearCookie("jwt", REFRESH_COOKIE_OPTIONS);
+    }
     next(error);
   }
 };

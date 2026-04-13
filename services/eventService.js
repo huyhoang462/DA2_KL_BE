@@ -1,5 +1,6 @@
 const Event = require("../models/event");
 const User = require("../models/user");
+const OrganizerProfile = require("../models/organizerProfile");
 const Show = require("../models/show");
 const TicketType = require("../models/ticketType");
 const Category = require("../models/category");
@@ -12,6 +13,57 @@ const {
   formatPaginatedResponse,
   createPaginationStages,
 } = require("../utils/pagination");
+
+const buildOrganizerSnapshot = (creator, profile) => {
+  const name =
+    (profile.displayName && profile.displayName.trim()) ||
+    (creator.fullName && creator.fullName.trim()) ||
+    "";
+  const email =
+    (profile.contactEmail && profile.contactEmail.trim()) ||
+    (creator.email && creator.email.trim()) ||
+    "";
+  const phone =
+    (profile.phone && profile.phone.trim()) ||
+    (creator.phone && creator.phone.trim()) ||
+    "";
+  const description = (profile.about && profile.about.trim()) || "";
+
+  return {
+    name,
+    email,
+    phone,
+    description,
+  };
+};
+
+const getOrganizerSnapshotForCreator = async (creator) => {
+  const profile = await OrganizerProfile.findOne({ user: creator._id });
+  if (!profile) {
+    const error = new Error(
+      "Organizer profile is required before creating an event",
+    );
+    error.status = 403;
+    error.code = "PROFILE_INCOMPLETE";
+    throw error;
+  }
+
+  const organizerSnapshot = buildOrganizerSnapshot(creator, profile);
+  if (
+    !organizerSnapshot.name ||
+    !organizerSnapshot.email ||
+    !organizerSnapshot.phone
+  ) {
+    const error = new Error(
+      "Please complete organizer profile (name, contact email, phone) before creating an event",
+    );
+    error.status = 403;
+    error.code = "PROFILE_INCOMPLETE";
+    throw error;
+  }
+
+  return organizerSnapshot;
+};
 
 const cleanupOrphanedData = async () => {
   const session = await mongoose.startSession();
@@ -443,7 +495,6 @@ const updateEvent = async (eventId, updateData) => {
       "location",
       "startDate",
       "endDate",
-      "organizer",
       "category",
       "status",
     ];
@@ -744,7 +795,6 @@ const createEvent = async (data, creatorId) => {
     location,
     startDate,
     endDate,
-    organizer,
     category: categoryId,
     payoutMethod: payoutMethodData,
     shows,
@@ -758,7 +808,6 @@ const createEvent = async (data, creatorId) => {
     format,
     startDate,
     endDate,
-    organizer,
     categoryId,
     payoutMethodData,
     shows,
@@ -856,11 +905,18 @@ const createEvent = async (data, creatorId) => {
     error.status = 404;
     throw error;
   }
+  if (creator.role !== "organizer") {
+    const error = new Error("Access denied. Organizer role required.");
+    error.status = 403;
+    throw error;
+  }
   if (!category) {
     const error = new Error("Category not found.");
     error.status = 404;
     throw error;
   }
+
+  const organizerSnapshot = await getOrganizerSnapshotForCreator(creator);
 
   const session = await mongoose.startSession();
   try {
@@ -903,7 +959,7 @@ const createEvent = async (data, creatorId) => {
       location: format === "offline" ? location : undefined,
       startDate: eventStart,
       endDate: eventEnd,
-      organizer,
+      organizer: organizerSnapshot,
       creator: creator._id,
       category: category._id,
       payoutMethod: payoutMethodId,
