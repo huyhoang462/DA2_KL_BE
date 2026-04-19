@@ -3,6 +3,8 @@ const mongoose = require("mongoose");
 const ticketTypeSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
+    // FE now sends price in USDT. This field stores reference conversion rate at creation time.
+    exchangeRateVndPerUsdt: { type: Number, min: 0 },
     price: { type: Number, required: true, min: 0 },
     quantityTotal: { type: Number, required: true, min: 1 },
     quantitySold: { type: Number, required: true, default: 0 },
@@ -16,7 +18,7 @@ const ticketTypeSchema = new mongoose.Schema(
       required: true,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 ticketTypeSchema.set("toJSON", {

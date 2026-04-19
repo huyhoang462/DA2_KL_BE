@@ -37,14 +37,14 @@ router.get(
   "/statistics",
   userExtractor,
   requireAdmin,
-  handleGetEventStatistics
+  handleGetEventStatistics,
 );
 
 /**
  * @route   GET /api/admin/events
  * @desc    Lấy danh sách tất cả events với filters và pagination
  * @query   search (string) - Tìm kiếm theo tên hoặc mô tả
- * @query   status (string) - Lọc theo status: pending, upcoming, ongoing, completed, rejected, cancelled
+ * @query   status (string) - Lọc theo status: pending, approved, minting, upcoming, ongoing, completed, rejected, cancelled
  * @query   category (string) - Lọc theo category ID
  * @query   format (string) - Lọc theo format: online, offline
  * @query   startDate (string) - Lọc từ ngày (YYYY-MM-DD)
@@ -69,9 +69,9 @@ router.get("/:id", userExtractor, requireAdmin, handleGetEventById);
  * @route   PATCH /api/admin/events/:id/status
  * @desc    DUYỆT/TỪ CHỐI/HUỶ sự kiện (Event Approval)
  * @body    status (string) - Status mới:
- *          - "approved" = Duyệt sự kiện (gửi email thông báo cho organizer)
+ *          - "approved" = Duyệt sự kiện (organizer cần mint để chuyển sang upcoming)
  *          - "rejected" = Từ chối (BẮT BUỘC có reason)
- *          - "cancelled" = Hủy sự kiện (BẮT BUỘC có reason)
+ *          - "cancelled" = Hủy sự kiện
  * @body    reason (string) - Lý do từ chối/hủy (required nếu status = rejected hoặc cancelled)
  * @access  Admin only
  * @note    Đây là nơi admin DUYỆT sự kiện - chức năng chính của trang "Quản lý sự kiện"
@@ -80,7 +80,7 @@ router.patch(
   "/:id/status",
   userExtractor,
   requireAdmin,
-  handleUpdateEventStatus
+  handleUpdateEventStatus,
 );
 
 /**
@@ -95,7 +95,7 @@ router.patch(
   "/:id/featured",
   userExtractor,
   requireAdmin,
-  handleSetFeaturedEvent
+  handleSetFeaturedEvent,
 );
 
 /**

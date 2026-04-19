@@ -27,6 +27,8 @@ const getDashboardOverview = async () => {
       totalOrganizers,
       totalEvents,
       pendingEvents,
+      approvedEvents,
+      mintingEvents,
       upcomingEvents,
       ongoingEvents,
       completedEvents,
@@ -45,6 +47,8 @@ const getDashboardOverview = async () => {
       // Sự kiện
       Event.countDocuments(),
       Event.countDocuments({ status: "pending" }),
+      Event.countDocuments({ status: "approved" }),
+      Event.countDocuments({ status: "minting" }),
       Event.countDocuments({ status: "upcoming" }),
       Event.countDocuments({ status: "ongoing" }),
       Event.countDocuments({ status: "completed" }),
@@ -115,7 +119,7 @@ const getDashboardOverview = async () => {
           revenue: dayRevenue[0]?.total || 0,
           ticketsSold: dayTickets,
         };
-      })
+      }),
     );
 
     // 3. BIỂU ĐỒ PHÂN BỐ SỰ KIỆN THEO DANH MỤC (Category Distribution)
@@ -170,7 +174,7 @@ const getDashboardOverview = async () => {
           date: date.toISOString().split("T")[0],
           count,
         };
-      })
+      }),
     );
 
     // 5. HOẠT ĐỘNG GẦN ĐÂY (Recent Activities)
@@ -337,7 +341,7 @@ const getDashboardOverview = async () => {
       0,
       23,
       59,
-      59
+      59,
     );
 
     const lastMonthRevenue = await Transaction.aggregate([
@@ -371,6 +375,8 @@ const getDashboardOverview = async () => {
           events: {
             total: totalEvents,
             pending: pendingEvents,
+            approved: approvedEvents,
+            minting: mintingEvents,
             upcoming: upcomingEvents,
             ongoing: ongoingEvents,
             completed: completedEvents,
@@ -580,7 +586,9 @@ const getEventStatistics = async () => {
     const eventsByFormat = await Event.aggregate([
       {
         $match: {
-          status: { $in: ["upcoming", "ongoing", "completed"] },
+          status: {
+            $in: ["approved", "minting", "upcoming", "ongoing", "completed"],
+          },
         },
       },
       {
@@ -602,7 +610,9 @@ const getEventStatistics = async () => {
     const topOrganizers = await Event.aggregate([
       {
         $match: {
-          status: { $in: ["upcoming", "ongoing", "completed"] },
+          status: {
+            $in: ["approved", "minting", "upcoming", "ongoing", "completed"],
+          },
         },
       },
       {

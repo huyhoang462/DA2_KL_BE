@@ -14,15 +14,16 @@ const updateEventStatuses = async () => {
     const now = new Date();
     let updated = {
       pendingToCancelled: 0,
+      waitingApprovalToCancelled: 0,
       upcomingToOngoing: 0,
       ongoingToCompleted: 0,
     };
 
     console.log(`\n🔄 [${now.toISOString()}] Checking event statuses...\n`);
 
-    // ✅ 1. PENDING → CANCELLED (quá startDate mà chưa duyệt)
+    // ✅ 1. PENDING/APPROVED/MINTING → CANCELLED (quá startDate mà chưa mở bán)
     const expiredPendingEvents = await Event.find({
-      status: "pending",
+      status: { $in: ["pending", "approved", "minting"] },
       startDate: { $lt: now }, // startDate < now
     }).session(session);
 
@@ -33,9 +34,10 @@ const updateEventStatuses = async () => {
         event.cancelledAt = now;
         await event.save({ session });
       }
+      updated.waitingApprovalToCancelled = expiredPendingEvents.length;
       updated.pendingToCancelled = expiredPendingEvents.length;
       console.log(
-        `❌ Cancelled ${updated.pendingToCancelled} expired pending events`
+        `❌ Cancelled ${updated.waitingApprovalToCancelled} expired pending/approved/minting events`,
       );
     }
 

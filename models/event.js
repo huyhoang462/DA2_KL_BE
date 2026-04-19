@@ -6,7 +6,7 @@ const addressComponentSchema = new mongoose.Schema(
     code: { type: Number, required: true },
     name: { type: String, required: true },
   },
-  { _id: false }
+  { _id: false },
 );
 const eventSchema = new mongoose.Schema(
   {
@@ -54,6 +54,8 @@ const eventSchema = new mongoose.Schema(
       enum: [
         "draft",
         "pending",
+        "approved",
+        "minting",
         "upcoming",
         "ongoing",
         "completed",
@@ -103,7 +105,7 @@ const eventSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // Middleware để tự động tạo normalized fields

@@ -265,14 +265,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
       throw error;
     }
 
-    const validStatuses = [
-      "pending",
-      "upcoming",
-      "ongoing",
-      "completed",
-      "rejected",
-      "cancelled",
-    ];
+    const validStatuses = ["approved", "rejected", "cancelled"];
 
     if (!validStatuses.includes(newStatus)) {
       const error = new Error(
@@ -304,6 +297,18 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
       throw error;
     }
 
+    if (newStatus === "approved" && oldStatus !== "pending") {
+      const error = new Error("Only pending events can be approved");
+      error.status = 400;
+      throw error;
+    }
+
+    if (newStatus === "rejected" && oldStatus !== "pending") {
+      const error = new Error("Only pending events can be rejected");
+      error.status = 400;
+      throw error;
+    }
+
     // Update status
     event.status = newStatus;
 
@@ -327,7 +332,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
     console.log("[ADMIN EVENT SERVICE] Event saved successfully");
 
     if (event.creator?._id) {
-      if (newStatus === "upcoming") {
+      if (newStatus === "approved") {
         try {
           await sendEventApprovedEmail(
             event.creator.email,
@@ -345,7 +350,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
           recipientId: event.creator._id,
           type: "event_approved",
           title: "Sự kiện được duyệt",
-          message: `Sự kiện \"${event.name}\" đã được duyệt và mở bán.`,
+          message: `Sự kiện \"${event.name}\" đã được duyệt. Vui lòng hoàn tất bước mint để mở bán.`,
           priority: "high",
           metadata: {
             eventId: event._id.toString(),
@@ -655,7 +660,9 @@ const getEventStatistics = async () => {
     const byFormat = await Event.aggregate([
       {
         $match: {
-          status: { $in: ["upcoming", "ongoing", "completed"] },
+          status: {
+            $in: ["approved", "minting", "upcoming", "ongoing", "completed"],
+          },
         },
       },
       {
@@ -677,7 +684,9 @@ const getEventStatistics = async () => {
     const byCategory = await Event.aggregate([
       {
         $match: {
-          status: { $in: ["upcoming", "ongoing", "completed"] },
+          status: {
+            $in: ["approved", "minting", "upcoming", "ongoing", "completed"],
+          },
         },
       },
       {
@@ -715,7 +724,9 @@ const getEventStatistics = async () => {
     const topOrganizers = await Event.aggregate([
       {
         $match: {
-          status: { $in: ["upcoming", "ongoing", "completed"] },
+          status: {
+            $in: ["approved", "minting", "upcoming", "ongoing", "completed"],
+          },
         },
       },
       {

@@ -9,6 +9,7 @@ const Order = require("../models/order");
 const OrderItem = require("../models/orderItem");
 const Ticket = require("../models/ticket");
 const mongoose = require("mongoose");
+const { createNotificationSafe } = require("./notificationService");
 const {
   formatPaginatedResponse,
   createPaginationStages,
@@ -496,7 +497,6 @@ const updateEvent = async (eventId, updateData) => {
       "startDate",
       "endDate",
       "category",
-      "status",
     ];
 
     allowedFields.forEach((field) => {
@@ -504,6 +504,17 @@ const updateEvent = async (eventId, updateData) => {
         eventFieldsToUpdate[field] = updateData[field];
       }
     });
+
+    if (
+      updateData.status !== undefined &&
+      updateData.status !== existingEvent.status
+    ) {
+      const error = new Error(
+        "Status updates are not supported in this endpoint. Use mint lifecycle endpoints.",
+      );
+      error.status = 400;
+      throw error;
+    }
 
     // Validate dates if provided
     if (updateData.startDate || updateData.endDate) {
@@ -892,6 +903,18 @@ const createEvent = async (data, creatorId) => {
         error.status = 400;
         throw error;
       }
+
+      if (
+        ticket.exchangeRateVndPerUsdt != null &&
+        (!Number.isFinite(Number(ticket.exchangeRateVndPerUsdt)) ||
+          Number(ticket.exchangeRateVndPerUsdt) <= 0)
+      ) {
+        const error = new Error(
+          `Ticket type in show '${show.name}' has invalid exchangeRateVndPerUsdt.`,
+        );
+        error.status = 400;
+        throw error;
+      }
     }
   }
 
@@ -980,6 +1003,10 @@ const createEvent = async (data, creatorId) => {
       const ticketTypesData = showData.tickets.map((ticketData) => ({
         name: ticketData.name,
         price: ticketData.price,
+        exchangeRateVndPerUsdt:
+          ticketData.exchangeRateVndPerUsdt != null
+            ? Number(ticketData.exchangeRateVndPerUsdt)
+            : undefined,
         quantityTotal: ticketData.quantityTotal,
         minPurchase: ticketData.minPurchase,
         maxPurchase: ticketData.maxPurchase,
@@ -1120,6 +1147,8 @@ const updateEventStatus = async (eventId, status, reason = null) => {
   const validStatuses = [
     "draft",
     "pending",
+    "approved",
+    "minting",
     "upcoming",
     "ongoing",
     "completed",
@@ -1153,8 +1182,22 @@ const updateEventStatus = async (eventId, status, reason = null) => {
     throw error;
   }
 
-  // Kiểm tra logic chuyển trạng thái (optional - có thể bỏ nếu không cần)
-  // Ví dụ: không cho phép chuyển từ "completed" về "pending"
+  // Chỉ cho phép organizer chuyển approved -> minting -> upcoming
+  if (status === "minting" && event.status !== "approved") {
+    const error = new Error("Event can only move to minting from approved");
+    error.status = 400;
+    throw error;
+  }
+
+  if (status === "upcoming" && event.status !== "minting") {
+    const error = new Error(
+      "Event can only be published to upcoming after minting",
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  // Không cho phép rollback completed -> pending
   if (event.status === "completed" && status === "pending") {
     const error = new Error("Cannot change completed event back to pending");
     error.status = 400;
@@ -1229,6 +1272,132 @@ const deleteEvent = async (eventId) => {
   } finally {
     session.endSession();
   }
+};
+
+const startEventMinting = async (eventId, organizerId = null) => {
+  if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
+    const error = new Error("Invalid event ID");
+    error.status = 400;
+    throw error;
+  }
+
+  const event = await Event.findById(eventId).populate("creator", "_id");
+  if (!event) {
+    const error = new Error("Event not found");
+    error.status = 404;
+    throw error;
+  }
+
+  if (event.status !== "approved") {
+    const error = new Error("Only approved events can start minting");
+    error.status = 400;
+    throw error;
+  }
+
+  const oldStatus = event.status;
+  event.status = "minting";
+  await event.save();
+
+  if (event.creator?._id) {
+    await createNotificationSafe({
+      recipientId: event.creator._id,
+      type: "event_minting_started",
+      title: "Đang mint vé sự kiện",
+      message: `Sự kiện \"${event.name}\" đã bắt đầu quá trình mint vé.`,
+      priority: "high",
+      metadata: {
+        eventId: event._id.toString(),
+        oldStatus,
+        newStatus: event.status,
+      },
+      channels: ["in_app", "email"],
+      createdBy: organizerId,
+    });
+  }
+
+  return {
+    success: true,
+    message: "Event minting started",
+    data: {
+      eventId: event._id.toString(),
+      oldStatus,
+      newStatus: event.status,
+    },
+  };
+};
+
+const finalizeEventMinting = async (
+  eventId,
+  isSuccess,
+  failureReason = null,
+  organizerId = null,
+) => {
+  if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
+    const error = new Error("Invalid event ID");
+    error.status = 400;
+    throw error;
+  }
+
+  if (typeof isSuccess !== "boolean") {
+    const error = new Error("isSuccess must be a boolean");
+    error.status = 400;
+    throw error;
+  }
+
+  const event = await Event.findById(eventId).populate("creator", "_id");
+  if (!event) {
+    const error = new Error("Event not found");
+    error.status = 404;
+    throw error;
+  }
+
+  if (event.status !== "minting") {
+    const error = new Error("Event is not in minting status");
+    error.status = 400;
+    throw error;
+  }
+
+  const oldStatus = event.status;
+  event.status = isSuccess ? "upcoming" : "approved";
+  await event.save();
+
+  if (event.creator?._id) {
+    const type = isSuccess ? "event_minting_success" : "event_minting_failed";
+    const title = isSuccess ? "Mint vé thành công" : "Mint vé thất bại";
+    const message = isSuccess
+      ? `Sự kiện \"${event.name}\" đã mint vé thành công và sẵn sàng mở bán.`
+      : `Mint vé cho sự kiện \"${event.name}\" thất bại.${failureReason ? ` Lý do: ${failureReason}` : ""}`;
+
+    await createNotificationSafe({
+      recipientId: event.creator._id,
+      type,
+      title,
+      message,
+      priority: isSuccess ? "high" : "critical",
+      metadata: {
+        eventId: event._id.toString(),
+        oldStatus,
+        newStatus: event.status,
+        failureReason: failureReason || null,
+      },
+      channels: ["in_app", "email"],
+      createdBy: organizerId,
+    });
+  }
+
+  return {
+    success: true,
+    message: isSuccess
+      ? "Event minting completed successfully"
+      : "Event minting failed and event has been moved back to approved",
+    data: {
+      eventId: event._id.toString(),
+      oldStatus,
+      newStatus: event.status,
+      isSuccess,
+      failureReason: failureReason || null,
+    },
+  };
 };
 
 /**
@@ -2224,6 +2393,8 @@ module.exports = {
   deleteEvent,
   getDashboardOverview,
   getRevenueAnalytics,
+  startEventMinting,
+  finalizeEventMinting,
   // Home page APIs
   incrementEventView,
   getFeaturedEvents,

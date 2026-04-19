@@ -8,6 +8,8 @@ const {
   getPendingEvents,
   updateEventStatus,
   updateEvent,
+  startEventMinting,
+  finalizeEventMinting,
   getDashboardOverview,
   getRevenueAnalytics,
 } = require("../services/eventService");
@@ -93,6 +95,34 @@ const handleUpdateEventStatus = async (req, res, next) => {
   }
 };
 
+const handleStartEventMinting = async (req, res, next) => {
+  try {
+    const eventId = req.params.id;
+    const organizerId = req.user?._id || null;
+    const result = await startEventMinting(eventId, organizerId);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const handleFinalizeEventMinting = async (req, res, next) => {
+  try {
+    const eventId = req.params.id;
+    const organizerId = req.user?._id || null;
+    const { isSuccess, failureReason } = req.body;
+    const result = await finalizeEventMinting(
+      eventId,
+      isSuccess,
+      failureReason,
+      organizerId,
+    );
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const handleDeleteEvent = async (req, res, next) => {
   try {
     const eventId = req.params.id;
@@ -142,7 +172,7 @@ const handleGetRevenueAnalytics = async (req, res, next) => {
       eventId,
       startDate,
       endDate,
-      groupBy
+      groupBy,
     );
 
     res.status(200).json(result);
@@ -161,6 +191,8 @@ module.exports = {
   handleCreateEvent,
   handleUpdateEvent,
   handleUpdateEventStatus,
+  handleStartEventMinting,
+  handleFinalizeEventMinting,
   handleDeleteEvent,
   handleGetDashboardOverview,
   handleGetRevenueAnalytics,

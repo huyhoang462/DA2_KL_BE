@@ -13,20 +13,20 @@ router.get(
   "/:id/dashboard/overview",
   userExtractor,
   // checkEventOwnership,
-  eventController.handleGetDashboardOverview
+  eventController.handleGetDashboardOverview,
 );
 router.get(
   "/:id/dashboard/revenue-chart",
   userExtractor,
   //checkEventOwnership,
-  eventController.handleGetRevenueAnalytics
+  eventController.handleGetRevenueAnalytics,
 );
 
 // Orders management routes - Đặt trước /:id để tránh conflict
 router.get(
   "/:eventId/orders",
   userExtractor,
-  orderController.handleGetEventOrders
+  orderController.handleGetEventOrders,
 );
 
 router.get("/:id", eventController.handleGetEventById);
@@ -34,7 +34,19 @@ router.put(
   "/:id",
   userExtractor,
   checkEventOwnership,
-  eventController.handleUpdateEvent
+  eventController.handleUpdateEvent,
+);
+router.patch(
+  "/:id/mint/start",
+  userExtractor,
+  checkEventOwnership,
+  eventController.handleStartEventMinting,
+);
+router.patch(
+  "/:id/mint/result",
+  userExtractor,
+  checkEventOwnership,
+  eventController.handleFinalizeEventMinting,
 );
 router.get("/user/:id", eventController.handleGetEventsByUserId);
 router.post("/", userExtractor, eventController.handleCreateEvent);
@@ -44,7 +56,7 @@ router.delete(
   "/:id",
   userExtractor,
   checkEventOwnership,
-  eventController.handleDeleteEvent
+  eventController.handleDeleteEvent,
 );
 
 module.exports = router;

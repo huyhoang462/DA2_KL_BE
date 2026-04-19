@@ -877,9 +877,17 @@ const getUserEvents = async (userId, page = 1, limit = 10, filters = {}) => {
     // Filter by status
     if (
       filters.status &&
-      ["draft", "published", "ongoing", "completed", "cancelled"].includes(
-        filters.status,
-      )
+      [
+        "draft",
+        "pending",
+        "approved",
+        "minting",
+        "upcoming",
+        "ongoing",
+        "completed",
+        "rejected",
+        "cancelled",
+      ].includes(filters.status)
     ) {
       matchQuery.status = filters.status;
     }
@@ -1061,9 +1069,13 @@ const getUserEvents = async (userId, page = 1, limit = 10, filters = {}) => {
     const statistics = {
       total: 0,
       draft: 0,
-      published: 0,
+      pending: 0,
+      approved: 0,
+      minting: 0,
+      upcoming: 0,
       ongoing: 0,
       completed: 0,
+      rejected: 0,
       cancelled: 0,
       totalRevenue,
       totalSoldTickets,
