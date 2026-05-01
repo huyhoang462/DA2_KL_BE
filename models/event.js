@@ -102,6 +102,11 @@ const eventSchema = new mongoose.Schema(
     featuredUntil: {
       type: Date,
     },
+    // --- VOUCHER DATA (Mint trên Smart Contract) ---
+    voucher: {
+      nonce: { type: Number },
+      signature: { type: String },
+    },
   },
   {
     timestamps: true,

@@ -1,3 +1,4 @@
+const { ethers } = require("ethers");
 const mongoose = require("mongoose");
 const Event = require("../models/event");
 const User = require("../models/user");
@@ -303,6 +304,93 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
       throw error;
     }
 
+    if (newStatus === "approved") {
+      // 1. Tính toán Voucher Data
+      const shows = await Show.find({ event: eventId });
+      const showIds = shows.map((s) => s._id);
+
+      const ticketTypes = await TicketType.find({ show: { $in: showIds } });
+      const totalQuantity = ticketTypes.reduce(
+        (sum, tt) => sum + tt.quantityTotal,
+        0,
+      );
+
+      // Thống nhất các fee này (có thể lưu config sau, ở đây fix cứng để ví dụ)
+      const commissionRateBps = 500; // 5%
+      const relayerGasPerTicket = 50000;
+      const checkinGasPerTicket = 20000;
+
+      // Hạn chót check-in lấy endDate của sự kiện cộng thêm vài giờ (ví dụ 24h)
+      const expiryTime = Math.floor(
+        (new Date(event.endDate).getTime() + 24 * 60 * 60 * 1000) / 1000,
+      );
+
+      // Tạo nonce ngẫu nhiên (chống trùng lặp)
+      const nonce = Math.floor(Math.random() * 1000000000);
+
+      // Dữ liệu tạo chữ ký
+      // Lấy id event chuyển thành số nguyên nếu dùng trên smart contract
+      // Ở đây ta dùng parseInt lấy ra mã số thập phân hoặc hash, tạm ví dụ:
+      // Trong thực tế, nếu dùng MongoDB ObjectId thì phải map eventId này sang uint256 cho SC
+      // Có thể dùng 8 ký tự cuối ObjectId parse ra uint256 hoặc lưu field eventId dạng số
+      const uint256EventId = parseInt(eventId.slice(-8), 16);
+
+      const voucherData = {
+        eventId: uint256EventId,
+        quantity: totalQuantity,
+        commissionRateBps,
+        relayerGasPerTicket,
+        checkinGasPerTicket,
+        expiryTime,
+        nonce,
+      };
+
+      // 2. Cấu trúc EIP-712
+      const domain = {
+        name: "ShineTicket",
+        version: "1",
+        chainId: parseInt(process.env.CHAIN_ID || "80002"),
+        verifyingContract:
+          process.env.SMART_CONTRACT_ADDRESS ||
+          "0x0000000000000000000000000000000000000000",
+      };
+
+      const types = {
+        MintVoucher: [
+          { name: "eventId", type: "uint256" },
+          { name: "quantity", type: "uint256" },
+          { name: "commissionRateBps", type: "uint256" },
+          { name: "relayerGasPerTicket", type: "uint256" },
+          { name: "checkinGasPerTicket", type: "uint256" },
+          { name: "expiryTime", type: "uint64" },
+          { name: "nonce", type: "uint256" },
+        ],
+      };
+
+      // 3. Ký số với Admin Wallet
+      if (!process.env.ADMIN_PRIVATE_KEY) {
+        throw new Error("Missing ADMIN_PRIVATE_KEY in environment variables");
+      }
+
+      const adminWallet = new ethers.Wallet(process.env.ADMIN_PRIVATE_KEY);
+      const signature = await adminWallet.signTypedData(
+        domain,
+        types,
+        voucherData,
+      );
+
+      // 4. Lưu lại thông tin vào event
+      event.voucher = {
+        nonce,
+        signature,
+      };
+
+      console.log(
+        `[ADMIN EVENT SERVICE] Signed Voucher for event ${eventId}:`,
+        { voucherData, signature },
+      );
+    }
+
     if (newStatus === "rejected" && oldStatus !== "pending") {
       const error = new Error("Only pending events can be rejected");
       error.status = 400;
@@ -333,6 +421,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
 
     if (event.creator?._id) {
       if (newStatus === "approved") {
+        // Gửi email thông báo khi event được duyệt
         try {
           await sendEventApprovedEmail(
             event.creator.email,
@@ -356,6 +445,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
             eventId: event._id.toString(),
             oldStatus,
             newStatus,
+            voucherSignature: event.voucher?.signature,
           },
           channels: ["in_app", "email"],
           createdBy: adminId,
