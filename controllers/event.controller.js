@@ -182,6 +182,43 @@ const handleGetRevenueAnalytics = async (req, res, next) => {
   }
 };
 
+const handleUpdateMintingStatus = async (req, res, next) => {
+  try {
+    const { id } = req.params; // _id của MongoDB
+    const { txHash } = req.body;
+
+    if (!txHash) return res.status(400).json({ error: "Missing txHash" });
+
+    // 1. Tìm event và kiểm tra trạng thái
+    const Event = require("../models/event"); // import Event
+    const event = await Event.findById(id);
+    if (!event || event.status !== "approved") {
+      return res.status(400).json({ error: "Event is not ready for minting" });
+    }
+
+    // 2. Cập nhật trạng thái
+    event.status = "minting";
+    await event.save();
+
+    // 3. Quăng Job vào BullMQ cho Worker đi kiểm tra (Giả sử bạn đã setup queue)
+    // const { verifyTxQueue } = require('../queues/bullmq.setup');
+    // await verifyTxQueue.add('verify-event-mint', {
+    //     eventId: event._id.toString(),
+    //     txHash: txHash
+    // }, {
+    //     attempts: 5,
+    //     backoff: { type: 'exponential', delay: 3000 }
+    // });
+
+    return res.status(200).json({
+      message: "Transaction received. Worker is verifying...",
+      status: "minting",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   handleCleanupData,
   handleGetAllEvents,
@@ -196,4 +233,5 @@ module.exports = {
   handleDeleteEvent,
   handleGetDashboardOverview,
   handleGetRevenueAnalytics,
+  handleUpdateMintingStatus,
 };

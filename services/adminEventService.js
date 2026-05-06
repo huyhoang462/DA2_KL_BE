@@ -315,10 +315,19 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
         0,
       );
 
-      // Thống nhất các fee này (có thể lưu config sau, ở đây fix cứng để ví dụ)
-      const commissionRateBps = 500; // 5%
-      const relayerGasPerTicket = 50000;
-      const checkinGasPerTicket = 20000;
+      // 2. Kéo cấu hình Fee (từ Database và .env)
+      // Lấy hoa hồng từ DB (nếu không có thì default là 500 - tức 5%)
+      const commissionRateBps = event.commissionRateBps || 500;
+
+      // Lấy phí gas từ ENV và ÉP KIỂU SỐ NGUYÊN (Bắt buộc dùng parseInt)
+      const relayerGasPerTicket = parseInt(
+        process.env.RELAYER_GAS_PER_TICKET || "50000",
+        10,
+      );
+      const checkinGasPerTicket = parseInt(
+        process.env.CHECKIN_GAS_PER_TICKET || "20000",
+        10,
+      );
 
       // Hạn chót check-in lấy endDate của sự kiện cộng thêm vài giờ (ví dụ 24h)
       const expiryTime = Math.floor(
@@ -349,7 +358,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
       const domain = {
         name: "ShineTicket",
         version: "1",
-        chainId: parseInt(process.env.CHAIN_ID || "80002"),
+        chainId: parseInt(process.env.CHAIN_ID || "80002", 10),
         verifyingContract:
           process.env.SMART_CONTRACT_ADDRESS ||
           "0x0000000000000000000000000000000000000000",
@@ -381,13 +390,13 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
 
       // 4. Lưu lại thông tin vào event
       event.voucher = {
-        nonce,
+        ...voucherData,
         signature,
       };
 
       console.log(
         `[ADMIN EVENT SERVICE] Signed Voucher for event ${eventId}:`,
-        { voucherData, signature },
+        event.voucher,
       );
     }
 

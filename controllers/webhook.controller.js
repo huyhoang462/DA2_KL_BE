@@ -33,7 +33,7 @@ const handleMintSuccessWebhook = async (req, res) => {
 
     // Validate ObjectId format cho orderIds
     const invalidIds = orderIds.filter(
-      (id) => !mongoose.Types.ObjectId.isValid(id)
+      (id) => !mongoose.Types.ObjectId.isValid(id),
     );
 
     if (invalidIds.length > 0) {
@@ -53,7 +53,7 @@ const handleMintSuccessWebhook = async (req, res) => {
     if (txHash) {
       const orderUpdateResult = await Order.updateMany(
         { _id: { $in: orderIds } },
-        { $set: { txHash } }
+        { $set: { txHash } },
       );
 
       const ordersMatched =
@@ -62,7 +62,7 @@ const handleMintSuccessWebhook = async (req, res) => {
         orderUpdateResult.modifiedCount ?? orderUpdateResult.nModified ?? 0;
 
       console.log(
-        `📦 [MINT WEBHOOK] Updated txHash for orders: matched=${ordersMatched}, updated=${ordersModified}`
+        `📦 [MINT WEBHOOK] Updated txHash for orders: matched=${ordersMatched}, updated=${ordersModified}`,
       );
     } else {
       console.warn("⚠️ No txHash provided in webhook payload");
@@ -80,7 +80,7 @@ const handleMintSuccessWebhook = async (req, res) => {
         if (!orderId || !Array.isArray(tokenIds) || tokenIds.length === 0) {
           console.warn(
             "⚠️ [MINT WEBHOOK] Invalid mapping entry, skip:",
-            mapEntry
+            mapEntry,
           );
           continue;
         }
@@ -88,14 +88,14 @@ const handleMintSuccessWebhook = async (req, res) => {
         if (!mongoose.Types.ObjectId.isValid(orderId)) {
           console.warn(
             "⚠️ [MINT WEBHOOK] Invalid orderId in mapping (not ObjectId):",
-            orderId
+            orderId,
           );
           continue;
         }
 
         console.log(
           `🔁 [MINT WEBHOOK] Mapping order ${orderId} with tokenIds:`,
-          tokenIds
+          tokenIds,
         );
 
         // Lấy danh sách tickets của order này cần được gán tokenId
@@ -108,7 +108,7 @@ const handleMintSuccessWebhook = async (req, res) => {
 
         if (!tickets || tickets.length === 0) {
           console.warn(
-            `⚠️ [MINT WEBHOOK] No tickets found for order ${orderId} with mintStatus=unminted|pending`
+            `⚠️ [MINT WEBHOOK] No tickets found for order ${orderId} with mintStatus=unminted|pending`,
           );
           continue;
         }
@@ -118,7 +118,7 @@ const handleMintSuccessWebhook = async (req, res) => {
 
         if (tokenIds.length !== tickets.length) {
           console.warn(
-            `⚠️ [MINT WEBHOOK] TokenIds length (${tokenIds.length}) != tickets length (${tickets.length}) for order ${orderId}. Will map first ${countToUpdate} items.`
+            `⚠️ [MINT WEBHOOK] TokenIds length (${tokenIds.length}) != tickets length (${tickets.length}) for order ${orderId}. Will map first ${countToUpdate} items.`,
           );
         }
 
@@ -141,7 +141,7 @@ const handleMintSuccessWebhook = async (req, res) => {
           });
 
           console.log(
-            `✅ [MINT WEBHOOK] Will set tokenId=${tokenId} for ticket ${ticket._id} (order ${orderId})`
+            `✅ [MINT WEBHOOK] Will set tokenId=${tokenId} for ticket ${ticket._id} (order ${orderId})`,
           );
         }
 
@@ -154,13 +154,13 @@ const handleMintSuccessWebhook = async (req, res) => {
           totalTicketsUpdated += modified;
 
           console.log(
-            `📌 [MINT WEBHOOK] Updated ${modified}/${countToUpdate} tickets for order ${orderId}`
+            `📌 [MINT WEBHOOK] Updated ${modified}/${countToUpdate} tickets for order ${orderId}`,
           );
         }
       }
     } else {
       console.log(
-        "ℹ️ [MINT WEBHOOK] No mapping array provided. Skipping tokenId assignment."
+        "ℹ️ [MINT WEBHOOK] No mapping array provided. Skipping tokenId assignment.",
       );
 
       // Fallback đơn giản: chỉ update mintStatus cho tất cả tickets của các order này
@@ -171,7 +171,7 @@ const handleMintSuccessWebhook = async (req, res) => {
         },
         {
           $set: { mintStatus: "minted" },
-        }
+        },
       );
 
       totalTicketsMatched = updateResult.matchedCount ?? updateResult.n ?? 0;
@@ -180,7 +180,7 @@ const handleMintSuccessWebhook = async (req, res) => {
     }
 
     console.log(
-      `🎯 [MINT WEBHOOK] DONE: totalTicketsMatched=${totalTicketsMatched}, totalTicketsUpdated=${totalTicketsUpdated}`
+      `🎯 [MINT WEBHOOK] DONE: totalTicketsMatched=${totalTicketsMatched}, totalTicketsUpdated=${totalTicketsUpdated}`,
     );
 
     return res.status(200).json({
@@ -235,7 +235,7 @@ const handleTicketsAutoCheckinWebhook = async (req, res) => {
   } catch (error) {
     console.error(
       "❌ Error handling tickets-auto-checkin webhook (log only):",
-      error
+      error,
     );
     return res.status(500).json({
       success: false,
@@ -245,7 +245,37 @@ const handleTicketsAutoCheckinWebhook = async (req, res) => {
   }
 };
 
+exports.handleEventMintResult = async (req, res) => {
+  // 1. Bảo mật: Chỉ cho phép Worker nhà mình gọi API này
+  const secret = req.headers["x-webhook-secret"];
+  if (secret !== process.env.INTERNAL_WEBHOOK_SECRET) {
+    return res.status(403).json({ error: "Unauthorized access" });
+  }
+
+  const { eventId, txHash, status } = req.body;
+
+  const Event = require("../models/event"); // import locally hoặc ở đầu file
+  const event = await Event.findById(eventId);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+
+  // 2. Xử lý logic dựa trên kết quả từ Blockchain
+  if (status === "SUCCESS") {
+    event.status = "upcoming";
+
+    await event.save();
+    console.log(`[WEBHOOK] Event ${eventId} is now upcoming On-chain!`);
+  } else if (status === "FAILED") {
+    // Giao dịch trên mạng lưới bị xịt (hết gas, lỗi logic...)
+    event.status = "approved"; // Trả về trạng thái cũ
+    await event.save();
+    console.log(`[WEBHOOK] Event ${eventId} minting failed. Ready for retry.`);
+  }
+
+  return res.status(200).json({ message: "Webhook processed" });
+};
+
 module.exports = {
   handleMintSuccessWebhook,
   handleTicketsAutoCheckinWebhook,
+  handleEventMintResult,
 };
