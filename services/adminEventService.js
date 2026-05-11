@@ -388,11 +388,13 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
         voucherData,
       );
 
+      console.log("Generated Signature: ", signature);
+
       // 4. Lưu lại thông tin vào event
       event.voucher = {
         ...voucherData,
-        signature,
       };
+      event.voucherSignature = signature;
 
       console.log(
         `[ADMIN EVENT SERVICE] Signed Voucher for event ${eventId}:`,
@@ -454,7 +456,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
             eventId: event._id.toString(),
             oldStatus,
             newStatus,
-            voucherSignature: event.voucher?.signature,
+            voucherSignature: event.voucherSignature,
           },
           channels: ["in_app", "email"],
           createdBy: adminId,

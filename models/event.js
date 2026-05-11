@@ -104,8 +104,16 @@ const eventSchema = new mongoose.Schema(
     },
     // --- VOUCHER DATA (Mint trên Smart Contract) ---
     voucher: {
+      eventId: { type: Number },
+      quantity: { type: Number },
+      commissionRateBps: { type: Number },
+      relayerGasPerTicket: { type: Number },
+      checkinGasPerTicket: { type: Number },
+      expiryTime: { type: Number },
       nonce: { type: Number },
-      signature: { type: String },
+    },
+    voucherSignature: {
+      type: String,
     },
   },
   {

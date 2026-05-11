@@ -1103,6 +1103,7 @@ const getEventsByUserId = async (userId) => {
         status: 1,
         totalTicketsSold: 1,
         totalTicketsAvailable: 1,
+        voucher: 1,
       },
     },
 
@@ -1126,6 +1127,8 @@ const getEventsByUserId = async (userId) => {
     status: event.status,
     totalTicketsSold: event.totalTicketsSold || 0,
     totalTicketsAvailable: event.totalTicketsAvailable || 0,
+    voucher: event.voucher || null,
+    voucherSignature: event.voucherSignature || null,
   }));
 };
 

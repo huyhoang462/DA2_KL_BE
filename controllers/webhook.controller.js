@@ -245,7 +245,7 @@ const handleTicketsAutoCheckinWebhook = async (req, res) => {
   }
 };
 
-exports.handleEventMintResult = async (req, res) => {
+const handleEventMintResult = async (req, res) => {
   // 1. Bảo mật: Chỉ cho phép Worker nhà mình gọi API này
   const secret = req.headers["x-webhook-secret"];
   if (secret !== process.env.INTERNAL_WEBHOOK_SECRET) {
