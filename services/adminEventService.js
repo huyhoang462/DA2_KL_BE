@@ -395,11 +395,10 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
         ...voucherData,
       };
       event.voucherSignature = signature;
-
-      console.log(
-        `[ADMIN EVENT SERVICE] Signed Voucher for event ${eventId}:`,
-        event.voucher,
-      );
+      console.log("[ADMIN EVENT SERVICE] Voucher payload:", {
+        voucher: event.voucher,
+        voucherSignature: event.voucherSignature,
+      });
     }
 
     if (newStatus === "rejected" && oldStatus !== "pending") {

@@ -1104,6 +1104,7 @@ const getEventsByUserId = async (userId) => {
         totalTicketsSold: 1,
         totalTicketsAvailable: 1,
         voucher: 1,
+        voucherSignature: 1,
       },
     },
 
@@ -1127,7 +1128,17 @@ const getEventsByUserId = async (userId) => {
     status: event.status,
     totalTicketsSold: event.totalTicketsSold || 0,
     totalTicketsAvailable: event.totalTicketsAvailable || 0,
-    voucher: event.voucher || null,
+    voucher: event.voucher
+      ? {
+          eventId: event.voucher.eventId,
+          quantity: event.voucher.quantity,
+          commissionRateBps: event.voucher.commissionRateBps,
+          relayerGasPerTicket: event.voucher.relayerGasPerTicket,
+          checkinGasPerTicket: event.voucher.checkinGasPerTicket,
+          expiryTime: event.voucher.expiryTime,
+          nonce: event.voucher.nonce,
+        }
+      : null,
     voucherSignature: event.voucherSignature || null,
   }));
 };
@@ -1354,11 +1365,11 @@ const finalizeEventMinting = async (
     throw error;
   }
 
-  if (event.status !== "minting") {
-    const error = new Error("Event is not in minting status");
-    error.status = 400;
-    throw error;
-  }
+  // if (event.status !== "minting") {
+  //   const error = new Error("Event is not in minting status");
+  //   error.status = 400;
+  //   throw error;
+  // }
 
   const oldStatus = event.status;
   event.status = isSuccess ? "upcoming" : "approved";
