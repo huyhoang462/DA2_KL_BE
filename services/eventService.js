@@ -429,6 +429,8 @@ const getEventById = async (eventId) => {
         status: 1,
         createdAt: 1, // THÊM thời gian tạo
         shows: 1,
+        vouchers: 1,
+        signatures: 1,
         category: {
           id: { $toString: "$category._id" },
           name: "$category.name",
@@ -1103,8 +1105,8 @@ const getEventsByUserId = async (userId) => {
         status: 1,
         totalTicketsSold: 1,
         totalTicketsAvailable: 1,
-        voucher: 1,
-        voucherSignature: 1,
+        vouchers: 1,
+        signatures: 1,
       },
     },
 
@@ -1128,18 +1130,17 @@ const getEventsByUserId = async (userId) => {
     status: event.status,
     totalTicketsSold: event.totalTicketsSold || 0,
     totalTicketsAvailable: event.totalTicketsAvailable || 0,
-    voucher: event.voucher
-      ? {
-          eventId: event.voucher.eventId,
-          quantity: event.voucher.quantity,
-          commissionRateBps: event.voucher.commissionRateBps,
-          relayerGasPerTicket: event.voucher.relayerGasPerTicket,
-          checkinGasPerTicket: event.voucher.checkinGasPerTicket,
-          expiryTime: event.voucher.expiryTime,
-          nonce: event.voucher.nonce,
-        }
-      : null,
-    voucherSignature: event.voucherSignature || null,
+    vouchers: (event.vouchers || []).map((voucher) => ({
+      eventId: voucher.eventId,
+      quantity: voucher.quantity,
+      price: voucher.price,
+      commissionRateBps: voucher.commissionRateBps,
+      relayerGasPerTicket: voucher.relayerGasPerTicket,
+      checkinGasPerTicket: voucher.checkinGasPerTicket,
+      expiryTime: voucher.expiryTime,
+      nonce: voucher.nonce,
+    })),
+    signatures: event.signatures || [],
   }));
 };
 
