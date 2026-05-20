@@ -344,6 +344,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
         MintVoucher: [
           { name: "eventId", type: "uint256" },
           { name: "quantity", type: "uint256" },
+          { name: "price", type: "uint256" },
           { name: "commissionRateBps", type: "uint256" },
           { name: "relayerGasPerTicket", type: "uint256" },
           { name: "checkinGasPerTicket", type: "uint256" },
@@ -372,7 +373,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
         const voucherData = {
           eventId: onChainId,
           quantity: tt.quantityTotal,
-          price: tt.price,
+          price: ethers.parseUnits(tt.price.toString(), 6).toString(), // Đưa price lên đúng thứ tự struct
           commissionRateBps,
           relayerGasPerTicket,
           checkinGasPerTicket,
@@ -390,7 +391,8 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
         signatures.push(signature);
       }
 
-      console.log("Generated Vouchers & Signatures");
+      console.log("Generated Vouchers & Signatures", { vouchers, signatures });
+      // 2. Lưu voucher data + signatures vào event (hoặc nơi nào đó phù hợp)
 
       // Lưu lại thông tin vào event
       event.vouchers = vouchers;
