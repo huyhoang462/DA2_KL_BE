@@ -86,6 +86,33 @@ const getAllPosts = async ({
   };
 };
 
+const getPostById = async (id) => {
+  // 1. Kiểm tra định dạng ObjectId của MongoDB
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    const error = new Error("Invalid post ID format");
+    error.status = 400;
+    throw error;
+  }
+
+  // 2. Tìm kiếm post theo ID và populate các field giống hệt hàm getAllPosts
+  const post = await Post.findById(id)
+    .populate("author", "fullName email role")
+    .populate("relatedEvent", "name startDate bannerImageUrl status location");
+
+  // 3. Kiểm tra xem post có tồn tại hay không
+  if (!post) {
+    const error = new Error("Post not found");
+    error.status = 404; // Trả về 404 nếu không tìm thấy bài viết
+    throw error;
+  }
+
+  // 4. Trả về kết quả theo cấu trúc dữ liệu quen thuộc của bạn
+  return {
+    message: "Post fetched successfully",
+    data: post,
+  };
+};
+
 const createPost = async ({ author, data }) => {
   if (!author || !author._id) {
     const error = new Error("Author information is required");
@@ -101,14 +128,14 @@ const createPost = async ({ author, data }) => {
     throw error;
   }
 
-  const trimmedContent = content.trim();
-  if (trimmedContent.length < 50 || trimmedContent.length > 5000) {
-    const error = new Error(
-      "content length must be between 50 and 5000 characters",
-    );
-    error.status = 400;
-    throw error;
-  }
+  // const trimmedContent = content.trim();
+  // if (trimmedContent.length < 50 || trimmedContent.length > 5000) {
+  //   const error = new Error(
+  //     "content length must be between 50 and 5000 characters",
+  //   );
+  //   error.status = 400;
+  //   throw error;
+  // }
 
   let normalizedImages = [];
   if (images !== undefined) {
@@ -214,6 +241,7 @@ const deletePost = async ({ postId, userId, userRole }) => {
 
 module.exports = {
   getAllPosts,
+  getPostById,
   createPost,
   deletePost,
 };

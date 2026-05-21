@@ -32,7 +32,7 @@ const reportSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["pending", "reviewing", "resolved", "dismissed"],
+      enum: ["pending", "resolved"],
       default: "pending",
     },
 
@@ -46,7 +46,7 @@ const reportSchema = new mongoose.Schema(
 
     action: {
       type: String,
-      enum: ["remove_content", "warn_user", "ban_user", "no_action"],
+      enum: ["remove_content", "warn_user", "ban_user","dismiss", "no_action"],
     },
 
     resolvedAt: Date,

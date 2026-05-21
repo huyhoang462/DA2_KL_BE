@@ -8,9 +8,20 @@ const handleGetReports = async (req, res, next) => {
     const result = await contentReportService.getReports({
       page,
       limit,
-      status,
       targetType,
+      status,
     });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Lấy thống kê report cho admin dashboard
+const handleGetReportSummary = async (req, res, next) => {
+  try {
+    const result = await contentReportService.getReportSummary();
 
     return res.status(200).json(result);
   } catch (error) {
@@ -83,6 +94,7 @@ const handleDeleteReport = async (req, res, next) => {
 
 module.exports = {
   handleGetReports,
+  handleGetReportSummary,
   handleCreateReport,
   handleGetReportById,
   handleReviewReport,

@@ -1082,6 +1082,9 @@ const getEventsByUserId = async (userId) => {
     // --- STAGE 4: $addFields (Calculate totals) ---
     {
       $addFields: {
+        statusPriority: {
+          $cond: [{ $eq: ["$status", "pending"] }, 0, 1],
+        },
         totalTicketsSold: {
           $sum: "$ticketTypes.quantitySold",
         },
@@ -1090,8 +1093,11 @@ const getEventsByUserId = async (userId) => {
         },
       },
     },
-
-    // --- STAGE 5: $project (Select only needed fields) ---
+    // --- STAGE 5: $sort (Pending first, then newest first) ---
+    {
+      $sort: { statusPriority: 1, createdAt: -1 },
+    },
+    // --- STAGE 6: $project (Select only needed fields) ---
     {
       $project: {
         bannerImageUrl: 1,
@@ -1378,9 +1384,15 @@ const finalizeEventMinting = async (
   if (event.creator?._id) {
     const type = isSuccess ? "event_minting_success" : "event_minting_failed";
     const title = isSuccess ? "Mint vé thành công" : "Mint vé thất bại";
+    const failureReasonForMessage = failureReason
+      ? `${String(failureReason).trim().slice(0, 300)}${
+          String(failureReason).trim().length > 300 ? "..." : ""
+        }`
+      : null;
+
     const message = isSuccess
       ? `Sự kiện \"${event.name}\" đã mint vé thành công và sẵn sàng mở bán.`
-      : `Mint vé cho sự kiện \"${event.name}\" thất bại.${failureReason ? ` Lý do: ${failureReason}` : ""}`;
+      : `Mint vé cho sự kiện \"${event.name}\" thất bại.${failureReasonForMessage ? ` Lý do: ${failureReasonForMessage}` : ""}`;
 
     await createNotificationSafe({
       recipientId: event.creator._id,

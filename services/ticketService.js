@@ -159,6 +159,171 @@ const getTicketsByUserId = async (userId) => {
   });
 };
 
+
+/**
+ * Lấy các tickets pending (sắp diễn ra) của một user
+ * - Ticket.status = "pending"
+ * - Show.startTime >= now
+ * - Order.status = "paid"
+ */
+const getPendingTicketsByUserId = async (userId) => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    const error = new Error("Invalid user ID format");
+    error.status = 400;
+    throw error;
+  }
+
+  const now = new Date();
+
+  const pipeline = [
+    {
+      $match: {
+        owner: new mongoose.Types.ObjectId(userId),
+        status: "pending",
+      },
+    },
+    {
+      $lookup: {
+        from: "tickettypes",
+        localField: "ticketType",
+        foreignField: "_id",
+        as: "ticketType",
+      },
+    },
+    {
+      $unwind: {
+        path: "$ticketType",
+        preserveNullAndEmptyArrays: false,
+      },
+    },
+    {
+      $lookup: {
+        from: "shows",
+        localField: "ticketType.show",
+        foreignField: "_id",
+        as: "show",
+      },
+    },
+    {
+      $unwind: {
+        path: "$show",
+        preserveNullAndEmptyArrays: false,
+      },
+    },
+    // {
+    //   $match: {
+    //     "show.startTime": { $gte: now },
+    //   },
+    // },
+    {
+      $lookup: {
+        from: "events",
+        localField: "show.event",
+        foreignField: "_id",
+        as: "event",
+      },
+    },
+    {
+      $unwind: {
+        path: "$event",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $lookup: {
+        from: "orders",
+        localField: "order",
+        foreignField: "_id",
+        as: "order",
+      },
+    },
+    {
+      $unwind: {
+        path: "$order",
+        preserveNullAndEmptyArrays: false,
+      },
+    },
+    {
+      $match: {
+        "order.status": "paid",
+      },
+    },
+    {
+      $sort: {
+        "show.startTime": 1,
+        createdAt: -1,
+      },
+    },
+    {
+      $project: {
+        _id: 1,
+        qrCode: 1,
+        status: 1,
+        checkinAt: 1,
+        lastCheckOutAt: 1,
+        mintStatus: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        ticketType: {
+          _id: "$ticketType._id",
+          name: "$ticketType.name",
+          price: "$ticketType.price",
+          description: "$ticketType.description",
+        },
+        show: {
+          _id: "$show._id",
+          name: "$show.name",
+          startTime: "$show.startTime",
+          endTime: "$show.endTime",
+        },
+        event: {
+          _id: "$event._id",
+          name: "$event.name",
+          bannerImageUrl: "$event.bannerImageUrl",
+          location: "$event.location",
+          format: "$event.format",
+        },
+      },
+    },
+  ];
+
+  const tickets = await Ticket.aggregate(pipeline);
+
+  return tickets.map((ticket) => {
+    const ticketType = ticket.ticketType;
+    const show = ticket.show;
+    const event = ticket.event;
+
+    return {
+      id: ticket._id.toString(),
+      qrCode: ticket.qrCode,
+      status: ticket.status,
+      checkinAt: ticket.checkinAt,
+      lastCheckOutAt: ticket.lastCheckOutAt,
+      mintStatus: ticket.mintStatus,
+      createdAt: ticket.createdAt,
+      updatedAt: ticket.updatedAt,
+
+      ticketTypeId: ticketType?._id?.toString() || null,
+      ticketTypeName: ticketType?.name || null,
+      price: ticketType?.price ?? null,
+      description: ticketType?.description || null,
+
+      showId: show?._id?.toString() || null,
+      showName: show?.name || null,
+      startTime: show?.startTime || null,
+      endTime: show?.endTime || null,
+
+      eventId: event?._id?.toString() || null,
+      eventName: event?.name || null,
+      bannerImageUrl: event?.bannerImageUrl || null,
+      location: event?.format === "offline" ? event?.location?.address : null,
+      format: event?.format || null,
+    };
+  });
+};
+
+
 /**
  * Lấy tickets theo order ID
  */
@@ -818,6 +983,7 @@ const getTicketsListForOrganizer = async (showId, filters = {}) => {
 module.exports = {
   createTicketsForOrder,
   getTicketsByUserId,
+  getPendingTicketsByUserId,
   getTicketsByOrderId,
   getTicketById,
   deleteTicket,

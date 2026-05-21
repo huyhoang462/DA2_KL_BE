@@ -1,6 +1,22 @@
 const mongoose = require("mongoose");
 const Notification = require("../models/notification");
 
+const MAX_TITLE_LENGTH = 150;
+const MAX_MESSAGE_LENGTH = 1000;
+
+const trimAndTruncate = (value, maxLength) => {
+  if (value === null || value === undefined) return "";
+
+  const text = String(value).trim();
+  if (text.length <= maxLength) return text;
+
+  // Keep within maxLength while still showing it's been truncated.
+  const suffix = "...";
+  if (maxLength <= suffix.length) return text.slice(0, maxLength);
+
+  return `${text.slice(0, maxLength - suffix.length).trimEnd()}${suffix}`;
+};
+
 const validatePositiveInteger = (value, fieldName) => {
   const parsedValue = Number(value);
 
@@ -47,7 +63,10 @@ const createNotification = async ({
     throw error;
   }
 
-  if (!type || !title || !message) {
+  const normalizedTitle = trimAndTruncate(title, MAX_TITLE_LENGTH);
+  const normalizedMessage = trimAndTruncate(message, MAX_MESSAGE_LENGTH);
+
+  if (!type || !normalizedTitle || !normalizedMessage) {
     const error = new Error("type, title and message are required");
     error.status = 400;
     throw error;
@@ -56,8 +75,8 @@ const createNotification = async ({
   const notification = await Notification.create({
     recipient: recipientId,
     type,
-    title,
-    message,
+    title: normalizedTitle,
+    message: normalizedMessage,
     metadata,
     priority,
     channels,

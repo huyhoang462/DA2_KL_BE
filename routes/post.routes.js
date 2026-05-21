@@ -4,6 +4,7 @@ const commentController = require("../controllers/comment.controller");
 const { userExtractor } = require("../middlewares/authentication");
 
 router.get("/", postController.handleGetAllPosts);
+router.get("/:id", postController.handleGetPostById);
 router.post("/", userExtractor, postController.handleCreatePost);
 router.get("/:postId/comments", commentController.handleGetCommentsByPost);
 router.post(

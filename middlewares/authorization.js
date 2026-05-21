@@ -32,7 +32,7 @@ const checkEventOwnership = async (request, response, next) => {
     }
 
     const error = new Error(
-      "Forbidden: You do not have permission to perform this action"
+      "Forbidden: You do not have permission to perform this action",
     );
     error.status = 403;
     return next(error);
@@ -47,8 +47,6 @@ const requireAdmin = (req, res, next) => {
     error.status = 401;
     return next(error);
   }
-
-  console.log("USER: ", req.user);
 
   if (req.user.role !== "admin") {
     const error = new Error("Access denied. Admin role required");

@@ -33,7 +33,6 @@ const handleGetAllUsers = async (req, res, next) => {
       sortOrder,
     };
 
-    console.log("[ADMIN USER] Getting all users with filters:", filters);
 
     const result = await getAllUsers(filters, page, limit);
     res.status(200).json(result);
@@ -51,7 +50,6 @@ const handleGetUserById = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    console.log("[ADMIN USER] Getting user by ID:", id);
 
     const result = await getUserById(id);
     res.status(200).json(result);
@@ -71,7 +69,6 @@ const handleUpdateUserRole = async (req, res, next) => {
     const { role } = req.body;
     const adminId = req.user._id;
 
-    console.log("[ADMIN USER] Updating user role:", { id, role, adminId });
 
     if (!role) {
       const error = new Error("Role is required");
@@ -97,7 +94,6 @@ const handleBanUser = async (req, res, next) => {
     const { reason } = req.body;
     const adminId = req.user._id;
 
-    console.log("[ADMIN USER] Banning user:", { id, reason, adminId });
 
     if (!reason) {
       const error = new Error("Ban reason is required");
@@ -122,7 +118,6 @@ const handleUnbanUser = async (req, res, next) => {
     const { id } = req.params;
     const adminId = req.user._id;
 
-    console.log("[ADMIN USER] Unbanning user:", { id, adminId });
 
     const result = await unbanUser(id, adminId);
     res.status(200).json(result);
@@ -142,7 +137,6 @@ const handleDeleteUser = async (req, res, next) => {
     const { hardDelete = false } = req.query;
     const adminId = req.user._id;
 
-    console.log("[ADMIN USER] Deleting user:", { id, hardDelete, adminId });
 
     const result = await deleteUser(id, adminId, hardDelete === "true");
     res.status(200).json(result);
@@ -163,13 +157,6 @@ const handleGetUserOrders = async (req, res, next) => {
 
     const filters = { status, startDate, endDate };
 
-    console.log("[ADMIN USER] Getting user orders:", {
-      id,
-      page,
-      limit,
-      filters,
-    });
-
     const result = await getUserOrders(id, page, limit, filters);
     res.status(200).json(result);
   } catch (error) {
@@ -189,12 +176,6 @@ const handleGetUserEvents = async (req, res, next) => {
 
     const filters = { status, startDate, endDate };
 
-    console.log("[ADMIN USER] Getting user events:", {
-      id,
-      page,
-      limit,
-      filters,
-    });
 
     const result = await getUserEvents(id, page, limit, filters);
     res.status(200).json(result);

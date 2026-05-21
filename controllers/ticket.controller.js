@@ -1,5 +1,6 @@
 const {
   getTicketsByUserId,
+  getPendingTicketsByUserId,
   getTicketsByOrderId,
   getTicketById,
   deleteTicket,
@@ -26,6 +27,26 @@ const handleGetMyTickets = async (req, res, next) => {
     });
   } catch (error) {
     console.error("[GET MY TICKETS] Error:", error);
+    next(error);
+  }
+};
+
+/**
+ * Lấy các tickets pending (sắp diễn ra) của user hiện tại
+ */
+const handleGetMyPendingTickets = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const tickets = await getPendingTicketsByUserId(userId);
+
+    res.status(200).json({
+      success: true,
+      count: tickets.length,
+      data: tickets,
+    });
+  } catch (error) {
+    console.error("[GET MY PENDING TICKETS] Error:", error);
     next(error);
   }
 };
@@ -123,15 +144,6 @@ const handleGetTicketsByShow = async (req, res, next) => {
     const { showId } = req.params;
     const { status, ticketTypeId, search, page, limit } = req.query;
 
-    console.log("[GET TICKETS BY SHOW] Request:", {
-      showId,
-      status,
-      ticketTypeId,
-      search,
-      page,
-      limit,
-    });
-
     const result = await getTicketsByShowId(showId, {
       status,
       ticketTypeId,
@@ -201,6 +213,7 @@ const handleGetOrganizerTickets = async (req, res, next) => {
 
 module.exports = {
   handleGetMyTickets,
+  handleGetMyPendingTickets,
   handleGetTicketsByOrderId,
   handleGetTicketById,
   handleDeleteTicket,

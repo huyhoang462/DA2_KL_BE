@@ -18,6 +18,18 @@ const handleGetAllPosts = async (req, res, next) => {
   }
 };
 
+const handleGetPostById = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const result = await postService.getPostById(id);
+
+    return res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const handleCreatePost = async (req, res, next) => {
   try {
     const result = await postService.createPost({
@@ -51,4 +63,5 @@ module.exports = {
   handleGetAllPosts,
   handleCreatePost,
   handleDeletePost,
+  handleGetPostById,
 };

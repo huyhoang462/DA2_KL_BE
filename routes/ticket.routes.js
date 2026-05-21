@@ -25,6 +25,13 @@ router.get(
   ticketController.handleGetTicketTypesByShow
 );
 
+// Lấy các tickets pending (sắp diễn ra) của user hiện tại
+router.get(
+  "/my-pending-tickets",
+  userExtractor,
+  ticketController.handleGetMyPendingTickets,
+);
+
 // Lấy tất cả tickets của show (Mobile - Staff check-in)
 router.get(
   "/show/:showId/tickets",
