@@ -3,11 +3,144 @@ const Order = require("../models/order");
 const OrderItem = require("../models/orderItem");
 const TicketType = require("../models/ticketType");
 const Ticket = require("../models/ticket");
-const { addMintJob } = require("../services/queueService");
+const {
+  addMintJob,
+  addRelayerBuyTicketJob,
+} = require("../services/queueService");
 const mongoose = require("mongoose");
 const { createTicketsForOrder } = require("../services/ticketService");
 const transactionService = require("../services/transactionService");
 const { createNotificationSafe } = require("../services/notificationService");
+
+const buildRelayerPayload = async (order, orderItems) => {
+  const populatedItems = await OrderItem.find({ order: order._id })
+    .populate({
+      path: "ticketType",
+      select: "show",
+      populate: {
+        path: "show",
+        select: "event",
+      },
+    })
+    .lean();
+
+  const firstItem = populatedItems[0];
+  const eventId = firstItem?.ticketType?.show?.event?.toString() || null;
+  const showId = firstItem?.ticketType?.show?._id?.toString() || null;
+  const quantity = orderItems.reduce((sum, item) => sum + item.quantity, 0);
+
+  return {
+    orderId: order._id.toString(),
+    orderCode: order.orderCode || null,
+    eventId,
+    showId,
+    quantity,
+    buyerAddress: order.walletAddress,
+    recipient: order.walletAddress,
+    price: quantity > 0 ? order.totalAmount / quantity : 0,
+    totalPrice: order.totalAmount,
+    totalPriceVnd: order.totalAmount * order.exchangeRateVndPerUsdt,
+    exchangeRateVndPerUsdt: order.exchangeRateVndPerUsdt,
+    callbackUrl:
+      process.env.RELAYER_CALLBACK_URL ||
+      `${process.env.SERVER_URL}/api/payment/relayer-callback`,
+    callbackSecret: process.env.RELAYER_CALLBACK_SECRET || null,
+    contractCall: {
+      method: "relayerBuyTicket",
+      args: [eventId, quantity, order.walletAddress],
+    },
+  };
+};
+
+const handleRelayerCallback = async (req, res) => {
+  try {
+    const expectedSecret = process.env.RELAYER_CALLBACK_SECRET;
+    const providedSecret = req.header("x-relayer-callback-secret");
+
+    if (expectedSecret && providedSecret !== expectedSecret) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized callback",
+      });
+    }
+
+    const {
+      orderId,
+      status,
+      txHash,
+      chainId,
+      contractAddress,
+      blockNumber,
+      relayerAddress,
+      errorMessage,
+      receipt,
+    } = req.body;
+
+    if (!orderId || !status) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: orderId, status",
+      });
+    }
+
+    const normalizedStatus = String(status).toLowerCase();
+    if (!["success", "failed"].includes(normalizedStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status. Expected success or failed",
+      });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    if (order.status !== "paid") {
+      return res.status(409).json({
+        success: false,
+        message: `Order status must be paid before relayer callback. Current status: ${order.status}`,
+      });
+    }
+
+    order.paymentInfo = {
+      ...(order.paymentInfo || {}),
+      relayer: {
+        status: normalizedStatus,
+        txHash: txHash || null,
+        chainId: chainId || null,
+        contractAddress: contractAddress || null,
+        blockNumber: blockNumber || null,
+        relayerAddress: relayerAddress || null,
+        errorMessage: errorMessage || null,
+        callbackReceivedAt: new Date(),
+        receipt: receipt || null,
+      },
+    };
+
+    if (normalizedStatus === "success" && txHash) {
+      order.txHash = txHash;
+    }
+
+    await order.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Relayer callback processed successfully",
+      orderId: order._id.toString(),
+      relayerStatus: normalizedStatus,
+    });
+  } catch (error) {
+    console.error("[RELAYER CALLBACK] Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
 
 const handleVnpayIpn = async (req, res) => {
   try {
@@ -337,10 +470,30 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
           `⚠️ Bỏ qua Mint: Không tìm thấy ví hoặc số lượng vé = 0. (Wallet: ${buyerWallet})`,
         );
       }
+
+      if (order.paymentMethod === "vnd" || order.paymentMethod === "vnpay") {
+        const relayerPayload = await buildRelayerPayload(order, existingItems);
+        if (
+          relayerPayload.eventId &&
+          relayerPayload.showId &&
+          relayerPayload.quantity > 0 &&
+          relayerPayload.buyerAddress
+        ) {
+          await addRelayerBuyTicketJob(relayerPayload);
+          console.log(
+            `🚀 [RELAYER BUY] Enqueued for order ${order._id} from payment success flow`,
+          );
+        } else {
+          console.warn(
+            `⚠️ [RELAYER BUY] Skip enqueue for order ${order._id} due to incomplete payload`,
+            relayerPayload,
+          );
+        }
+      }
     } catch (queueError) {
       // Chỉ log lỗi queue, không throw để tránh rollback lại transaction thanh toán
       console.error(
-        "❌ Lỗi đẩy Job Mint (User đã thanh toán nhưng chưa Mint):",
+        "❌ Lỗi đẩy Job Queue sau thanh toán thành công:",
         queueError,
       );
     }
@@ -654,6 +807,7 @@ const handleFinalizeOrder = async (req, res) => {
 module.exports = {
   handleVnpayIpn,
   handleVnpayReturn,
+  handleRelayerCallback,
   processSuccessfulPayment,
   processFailedPayment,
   processCancelledPayment, // ⭐ Export thêm

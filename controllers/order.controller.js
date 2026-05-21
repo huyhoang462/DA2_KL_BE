@@ -8,16 +8,26 @@ const {
   resendPaymentLink,
 } = require("../services/orderService");
 const { vnpayConfig, ProductCode } = require("../config/vnpayConfig");
+const { parseUnits } = require("ethers");
 
 const handleCreatePayment = async (req, res, next) => {
   try {
     const buyerId = req.user.id;
     const { eventId, showId, exchangeRateVndPerUsdt, items } = req.body;
 
-
     // Tạo order
     const orderResult = await createOrder(
-      { eventId, showId, exchangeRateVndPerUsdt, items },
+      {
+        eventId,
+        showId,
+        exchangeRateVndPerUsdt,
+        items,
+        paymentMethod: "vnd",
+        checkoutData: {
+          eventId,
+          showId,
+        },
+      },
       buyerId,
     );
 
@@ -30,9 +40,11 @@ const handleCreatePayment = async (req, res, next) => {
       process.env.VNP_RETURN_URL ||
       "http://localhost:5173/payment/vnpay-return";
 
+    const totalAmountVnd =
+      orderResult.totalAmount * orderResult.exchangeRateVndPerUsdt;
+
     const paymentUrl = vnpayConfig.buildPaymentUrl({
-      vnp_Amount:
-        orderResult.totalAmount * orderResult.exchangeRateVndPerUsdt , // Số tiền (VNPay tự nhân 100)
+      vnp_Amount: totalAmountVnd, // Số tiền (VNPay tự nhân 100)
       vnp_IpAddr: "127.0.0.1",
       vnp_TxnRef: orderResult.orderId, // Mã đơn hàng
       vnp_OrderInfo: `ThanhToanDonHang${orderResult.orderId}`, // Thông tin đơn hàng
@@ -43,114 +55,62 @@ const handleCreatePayment = async (req, res, next) => {
       vnp_BankCode: "NCB",
     });
 
-    // console.log("[CREATE PAYMENT] Payment URL created:", paymentUrl);
+    const onChainIds = orderResult.items.map((item) => item.onChainId);
+    const quantities = orderResult.items.map((item) => item.quantity);
 
-    res.status(201).json({
-      success: true,
-      orderId: orderResult.orderId,
-      paymentUrl,
-      totalAmount: orderResult.totalAmount,
-      totalAmountVnd:
-        orderResult.totalAmount * orderResult.exchangeRateVndPerUsdt,
-      exchangeRateVndPerUsdt: orderResult.exchangeRateVndPerUsdt,
-      expiresAt: orderResult.expiresAt,
-      message: "Order created successfully",
+    // Compute absolute total in 6 Decimals for the `approve` call by summing up items
+    let totalUsdt6DecimalsBn = 0n;
+    orderResult.items.forEach((item) => {
+      const itemPriceBn = parseUnits(item.priceAtPurchase.toString(), 6);
+      totalUsdt6DecimalsBn += itemPriceBn * BigInt(item.quantity);
     });
+    const approveAmount6Decimals = totalUsdt6DecimalsBn.toString();
+
+    const responsePayload = {
+      success: true,
+      message: "Order created successfully",
+      order: {
+        orderId: orderResult.orderId,
+        orderCode: orderResult.orderCode,
+        totalAmountUsdt: orderResult.totalAmount,
+        totalAmountVnd: totalAmountVnd,
+        expiresAt: orderResult.expiresAt,
+        items: orderResult.items.map((item) => ({
+          ticketTypeName: item.ticketTypeName,
+          quantity: item.quantity,
+          subtotal: item.subtotal,
+        })),
+      },
+      cryptoConfig: {
+        approveAmount6Decimals,
+        eventIds: onChainIds,
+        quantities,
+      },
+      vndConfig: {
+        paymentUrl,
+      },
+    };
+
+    // Log full payload returned to frontend for debugging/tracing
+    try {
+      console.log(
+        "[CREATE PAYMENT] Response to FE:",
+        JSON.stringify(responsePayload),
+      );
+    } catch (logErr) {
+      console.log(
+        "[CREATE PAYMENT] Response to FE (non-serializable):",
+        responsePayload,
+      );
+    }
+
+    res.status(201).json(responsePayload);
   } catch (error) {
     console.error("[CREATE PAYMENT] Error:", error);
     next(error);
   }
 };
 
-const handleCreatePaymentMomo = async (req, res, next) => {
-
-//https://developers.momo.vn/#/docs/en/aiov2/?id=payment-method
-//parameters
-var accessKey = 'F8BBA842ECF85';
-var secretKey = 'K951B6PE1waDMi640xX08PD3vg6EkVlz';
-var orderInfo = 'pay with MoMo';
-var partnerCode = 'MOMO';
-var redirectUrl = 'https://webhook.site/b3088a6a-2d17-4f8d-a383-71389a6c600b';
-var ipnUrl = 'https://webhook.site/b3088a6a-2d17-4f8d-a383-71389a6c600b';
-var requestType = "payWithMethod";
-var amount = '50000';
-var orderId = partnerCode + new Date().getTime();
-var requestId = orderId;
-var extraData ='';
-var paymentCode = 'T8Qii53fAXyUftPV3m9ysyRhEanUs9KlOPfHgpMR0ON50U10Bh+vZdpJU7VY4z+Z2y77fJHkoDc69scwwzLuW5MzeUKTwPo3ZMaB29imm6YulqnWfTkgzqRaion+EuD7FN9wZ4aXE1+mRt0gHsU193y+yxtRgpmY7SDMU9hCKoQtYyHsfFR5FUAOAKMdw2fzQqpToei3rnaYvZuYaxolprm9+/+WIETnPUDlxCYOiw7vPeaaYQQH0BF0TxyU3zu36ODx980rJvPAgtJzH1gUrlxcSS1HQeQ9ZaVM1eOK/jl8KJm6ijOwErHGbgf/hVymUQG65rHU2MWz9U8QUjvDWA==';
-var orderGroupId ='';
-var autoCapture =true;
-var lang = 'vi';
-
-//before sign HMAC SHA256 with format
-//accessKey=$accessKey&amount=$amount&extraData=$extraData&ipnUrl=$ipnUrl&orderId=$orderId&orderInfo=$orderInfo&partnerCode=$partnerCode&redirectUrl=$redirectUrl&requestId=$requestId&requestType=$requestType
-var rawSignature = "accessKey=" + accessKey + "&amount=" + amount + "&extraData=" + extraData + "&ipnUrl=" + ipnUrl + "&orderId=" + orderId + "&orderInfo=" + orderInfo + "&partnerCode=" + partnerCode + "&redirectUrl=" + redirectUrl + "&requestId=" + requestId + "&requestType=" + requestType;
-//puts raw signature
-console.log("--------------------RAW SIGNATURE----------------")
-console.log(rawSignature)
-//signature
-const crypto = require('crypto');
-var signature = crypto.createHmac('sha256', secretKey)
-    .update(rawSignature)
-    .digest('hex');
-console.log("--------------------SIGNATURE----------------")
-console.log(signature)
-
-//json object send to MoMo endpoint
-const requestBody = JSON.stringify({
-    partnerCode : partnerCode,
-    partnerName : "Test",
-    storeId : "MomoTestStore",
-    requestId : requestId,
-    amount : amount,
-    orderId : orderId,
-    orderInfo : orderInfo,
-    redirectUrl : redirectUrl,
-    ipnUrl : ipnUrl,
-    lang : lang,
-    requestType: requestType,
-    autoCapture: autoCapture,
-    extraData : extraData,
-    orderGroupId: orderGroupId,
-    signature : signature
-});
-//Create the HTTPS objects
-const https = require('https');
-const options = {
-    hostname: 'test-payment.momo.vn',
-    port: 443,
-    path: '/v2/gateway/api/create',
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(requestBody)
-    }
-}
-//Send the request and get the response
-const req = https.request(options, res => {
-    console.log(`Status: ${res.statusCode}`);
-    console.log(`Headers: ${JSON.stringify(res.headers)}`);
-    res.setEncoding('utf8');
-    res.on('data', (body) => {
-        console.log('Body: ');
-        console.log(body);
-        console.log('resultCode: ');
-        console.log(JSON.parse(body).resultCode);
-    });
-    res.on('end', () => {
-        console.log('No more data in response.');
-    });
-})
-
-req.on('error', (e) => {
-    console.log(`problem with request: ${e.message}`);
-});
-// write data to request body
-console.log("Sending....")
-req.write(requestBody);
-req.end();
-  
-}
 const handleGetOrderStatus = async (req, res, next) => {
   try {
     const { orderId } = req.params;

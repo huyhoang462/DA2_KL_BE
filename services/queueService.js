@@ -130,4 +130,55 @@ const addExpireJob = async (ticketIds, showId) => {
   }
 };
 
-module.exports = { addMintJob, addCheckInJob, addExpireJob };
+// ------------------------------------------------------
+// Queue RELAYER BUY (mua vé on-chain sau khi thanh toán VND thành công)
+// ------------------------------------------------------
+const relayerBuyQueueName =
+  process.env.RELAYER_BUY_QUEUE_NAME || "relayer-buy-queue";
+
+const relayerBuyQueue = new Queue(relayerBuyQueueName, {
+  connection,
+  defaultJobOptions: {
+    removeOnComplete: true,
+    removeOnFail: 5000,
+    attempts: 3,
+  },
+});
+
+/**
+ * Đẩy job mua vé on-chain qua relayer.
+ * Dùng orderId làm jobId để tránh enqueue trùng khi IPN bị gọi lại.
+ * @param {Object} payload - Dữ liệu worker cần để gọi relayerBuyTicket
+ */
+const addRelayerBuyTicketJob = async (payload) => {
+  try {
+    if (!payload || !payload.orderId) {
+      throw new Error("Missing payload.orderId for relayer buy job");
+    }
+
+    await relayerBuyQueue.add("relayer-buy-ticket-job", payload, {
+      jobId: payload.orderId.toString(),
+    });
+
+    const counts = await relayerBuyQueue.getJobCounts();
+    console.log(
+      `🚀 [Relayer Queue] Queued relayer-buy job for order ${payload.orderId}`,
+    );
+    console.log(
+      `📥 [Relayer Queue] waiting=${counts.waiting}, active=${counts.active}, delayed=${counts.delayed || 0}, completed=${counts.completed || 0}`,
+    );
+  } catch (error) {
+    console.error(
+      "❌ [Relayer Queue] Failed to enqueue relayer-buy job:",
+      error,
+    );
+    throw error;
+  }
+};
+
+module.exports = {
+  addMintJob,
+  addCheckInJob,
+  addExpireJob,
+  addRelayerBuyTicketJob,
+};

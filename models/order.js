@@ -20,6 +20,19 @@ const orderSchema = new mongoose.Schema(
     },
     totalAmount: { type: Number, required: true, min: 0 },
     exchangeRateVndPerUsdt: { type: Number, required: true, min: 0 }, // ⭐ Tỷ giá VND/USDT tại thời điểm tạo order
+    paymentMethod: {
+      type: String,
+      enum: ["web3", "vnd", "vnpay", "momo"],
+      default: "vnd",
+    },
+    paymentInfo: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+    checkoutData: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     status: {
       type: String,
       enum: ["pending", "paid", "cancelled", "failed"],
@@ -33,7 +46,7 @@ const orderSchema = new mongoose.Schema(
     txHash: { type: String },
     expiresAt: { type: Date, required: true },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Pre-save hook để tự động generate orderCode nếu chưa có
