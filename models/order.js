@@ -19,6 +19,7 @@ const orderSchema = new mongoose.Schema(
       required: true,
     },
     totalAmount: { type: Number, required: true, min: 0 },
+    exchangeRateVndPerUsdt: { type: Number, required: true, min: 0 }, // ⭐ Tỷ giá VND/USDT tại thời điểm tạo order
     status: {
       type: String,
       enum: ["pending", "paid", "cancelled", "failed"],

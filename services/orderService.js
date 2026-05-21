@@ -69,7 +69,7 @@ const cancelOrderAndReleaseTickets = async (orderId) => {
 };
 
 const createOrder = async (orderData, buyerId, retryCount = 0) => {
-  const { eventId, showId, items } = orderData;
+  const { eventId, showId, exchangeRateVndPerUsdt, items } = orderData;
   const maxRetries = 3;
 
   if (
@@ -79,7 +79,7 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
     !Array.isArray(items) ||
     items.length === 0
   ) {
-    const error = new Error("Missing required fields: eventId, showId, items");
+    const error = new Error("Missing required fields: eventId, showId, exchangeRateVndPerUsdt, items");
     error.status = 400;
     throw error;
   }
@@ -281,6 +281,7 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
       const newOrder = new Order({
         buyer: buyerId,
         totalAmount,
+        exchangeRateVndPerUsdt,
         status: "pending",
         expiresAt,
         walletAddress: buyer.walletAddress,
@@ -336,6 +337,7 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
       return {
         orderId: savedOrder.id,
         totalAmount: savedOrder.totalAmount,
+        exchangeRateVndPerUsdt: savedOrder.exchangeRateVndPerUsdt,
         expiresAt: savedOrder.expiresAt,
         status: savedOrder.status,
         items: orderItemsData.map((item) => ({
