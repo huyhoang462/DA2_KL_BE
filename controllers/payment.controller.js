@@ -311,8 +311,27 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
           `📌 [MINT STATUS] Order ${order._id}: set mintStatus=pending cho ${modifiedCount} ticket(s)`,
         );
 
-        // 4.2 Gửi job Mint sang Worker
-        await addMintJob(buyerWallet, totalTicketsToMint, order._id.toString());
+        // 4.2 Gửi job Mint sang Worker (từng loại vé)
+        const TicketType = require("../models/ticketType"); // Import model nếu chưa có
+
+        for (const item of existingItems) {
+          const tt = await TicketType.findById(item.ticketType).lean();
+          if (tt && tt.onChainId) {
+            console.log(
+              `💳 [MINT QUEUE] Dispatching Mint Job: Order ${order._id} -> Wallet: ${buyerWallet} | onChainId: ${tt.onChainId} | QT: ${item.quantity}`,
+            );
+            await addMintJob(
+              buyerWallet,
+              item.quantity,
+              order._id.toString(),
+              tt.onChainId,
+            );
+          } else {
+            console.warn(
+              `⚠️ [MINT QUEUE] Thiếu onChainId cho TicketType ${item.ticketType} của Order ${order._id}`,
+            );
+          }
+        }
       } else {
         console.warn(
           `⚠️ Bỏ qua Mint: Không tìm thấy ví hoặc số lượng vé = 0. (Wallet: ${buyerWallet})`,

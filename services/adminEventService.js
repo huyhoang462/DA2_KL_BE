@@ -305,21 +305,17 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
     }
 
     if (newStatus === "approved") {
-      // 1. Tính toán Voucher Data
+      // 1. Tính toán Voucher Data theo từng TicketType
       const shows = await Show.find({ event: eventId });
       const showIds = shows.map((s) => s._id);
 
       const ticketTypes = await TicketType.find({ show: { $in: showIds } });
-      const totalQuantity = ticketTypes.reduce(
-        (sum, tt) => sum + tt.quantityTotal,
-        0,
-      );
 
-      // 2. Kéo cấu hình Fee (từ Database và .env)
-      // Lấy hoa hồng từ DB (nếu không có thì default là 500 - tức 5%)
+      let vouchers = [];
+      let signatures = [];
+
+      // Kéo cấu hình Fee (từ Database và .env)
       const commissionRateBps = event.commissionRateBps || 500;
-
-      // Lấy phí gas từ ENV và ÉP KIỂU SỐ NGUYÊN (Bắt buộc dùng parseInt)
       const relayerGasPerTicket = parseInt(
         process.env.RELAYER_GAS_PER_TICKET || "50000",
         10,
@@ -334,27 +330,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
         (new Date(event.endDate).getTime() + 24 * 60 * 60 * 1000) / 1000,
       );
 
-      // Tạo nonce ngẫu nhiên (chống trùng lặp)
-      const nonce = Math.floor(Math.random() * 1000000000);
-
-      // Dữ liệu tạo chữ ký
-      // Lấy id event chuyển thành số nguyên nếu dùng trên smart contract
-      // Ở đây ta dùng parseInt lấy ra mã số thập phân hoặc hash, tạm ví dụ:
-      // Trong thực tế, nếu dùng MongoDB ObjectId thì phải map eventId này sang uint256 cho SC
-      // Có thể dùng 8 ký tự cuối ObjectId parse ra uint256 hoặc lưu field eventId dạng số
-      const uint256EventId = parseInt(eventId.slice(-8), 16);
-
-      const voucherData = {
-        eventId: uint256EventId,
-        quantity: totalQuantity,
-        commissionRateBps,
-        relayerGasPerTicket,
-        checkinGasPerTicket,
-        expiryTime,
-        nonce,
-      };
-
-      // 2. Cấu trúc EIP-712
+      // Cấu trúc EIP-712 chung
       const domain = {
         name: "ShineTicket",
         version: "1",
@@ -368,6 +344,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
         MintVoucher: [
           { name: "eventId", type: "uint256" },
           { name: "quantity", type: "uint256" },
+          { name: "price", type: "uint256" },
           { name: "commissionRateBps", type: "uint256" },
           { name: "relayerGasPerTicket", type: "uint256" },
           { name: "checkinGasPerTicket", type: "uint256" },
@@ -376,28 +353,53 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
         ],
       };
 
-      // 3. Ký số với Admin Wallet
+      // Ký số với Admin Wallet
       if (!process.env.ADMIN_PRIVATE_KEY) {
         throw new Error("Missing ADMIN_PRIVATE_KEY in environment variables");
       }
-
       const adminWallet = new ethers.Wallet(process.env.ADMIN_PRIVATE_KEY);
-      const signature = await adminWallet.signTypedData(
-        domain,
-        types,
-        voucherData,
-      );
 
-      console.log("Generated Signature: ", signature);
+      // Tiến hành chạy vòng lặp cho mỗi TicketType
+      for (const tt of ticketTypes) {
+        // Sinh onChainId (ví dụ dùng parseInt slice ObjectID + ngẫu nhiên để tránh trùng lặp)
+        const onChainId =
+          parseInt(tt._id.toString().slice(-8), 16) +
+          Math.floor(Math.random() * 10000);
+        tt.onChainId = onChainId;
+        await tt.save();
 
-      // 4. Lưu lại thông tin vào event
-      event.voucher = {
-        ...voucherData,
-      };
-      event.voucherSignature = signature;
-      console.log("[ADMIN EVENT SERVICE] Voucher payload:", {
-        voucher: event.voucher,
-        voucherSignature: event.voucherSignature,
+        const nonce = Math.floor(Math.random() * 1000000000);
+
+        const voucherData = {
+          eventId: onChainId,
+          quantity: tt.quantityTotal,
+          price: ethers.parseUnits(tt.price.toString(), 6).toString(), // Đưa price lên đúng thứ tự struct
+          commissionRateBps,
+          relayerGasPerTicket,
+          checkinGasPerTicket,
+          expiryTime,
+          nonce,
+        };
+
+        const signature = await adminWallet.signTypedData(
+          domain,
+          types,
+          voucherData,
+        );
+
+        vouchers.push(voucherData);
+        signatures.push(signature);
+      }
+
+      console.log("Generated Vouchers & Signatures", { vouchers, signatures });
+      // 2. Lưu voucher data + signatures vào event (hoặc nơi nào đó phù hợp)
+
+      // Lưu lại thông tin vào event
+      event.vouchers = vouchers;
+      event.signatures = signatures;
+      console.log("[ADMIN EVENT SERVICE] Voucher payloads updated:", {
+        vouchers: event.vouchers,
+        signatures: event.signatures,
       });
     }
 
@@ -536,6 +538,8 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
         oldStatus,
         newStatus,
         reason: newStatus === "rejected" ? event.rejectionReason : null,
+        vouchers: event.vouchers || [],
+        signatures: event.signatures || [],
       },
     };
   } catch (error) {

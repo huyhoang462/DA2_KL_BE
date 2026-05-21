@@ -28,24 +28,26 @@ const mintQueue = new Queue(mintQueueName, {
  * @param {string} userWallet - Địa chỉ ví người nhận (0x...)
  * @param {number} quantity - Số lượng vé
  * @param {string} orderId - ID đơn hàng (để log)
+ * @param {number} onChainId - Số định danh của Loại vé trên SC
  */
-const addMintJob = async (userWallet, quantity, orderId) => {
+const addMintJob = async (userWallet, quantity, orderId, onChainId) => {
   try {
     // Tên Job "mint-job" là đặt cho vui, quan trọng là cục data bên trong
     await mintQueue.add("mint-job", {
       recipient: userWallet,
       quantity: quantity,
       orderId: orderId,
+      onChainId: onChainId,
     });
     const counts = await mintQueue.getJobCounts();
 
     console.log(
-      `🚀 [Queue] Đã bắn đơn Mint cho Order #${orderId} -> Ví: ${userWallet} | Tickets: ${quantity}`
+      `🚀 [Queue] Đã bắn đơn Mint cho Order #${orderId} -> Ví: ${userWallet} | Tickets: ${quantity}`,
     );
     console.log(
       `📥 [Queue] Trạng thái hàng chờ: waiting=${counts.waiting}, active=${
         counts.active
-      }, delayed=${counts.delayed || 0}, completed=${counts.completed || 0}`
+      }, delayed=${counts.delayed || 0}, completed=${counts.completed || 0}`,
     );
   } catch (error) {
     console.error(`❌ [Queue] Lỗi gửi job Mint:`, error);
@@ -80,7 +82,7 @@ const addCheckInJob = async (ticketId) => {
     console.log(
       `📥 [CheckIn Queue] waiting=${counts.waiting}, active=${
         counts.active
-      }, delayed=${counts.delayed || 0}, completed=${counts.completed || 0}`
+      }, delayed=${counts.delayed || 0}, completed=${counts.completed || 0}`,
     );
   } catch (error) {
     console.error("❌ [Queue] Lỗi gửi job Check-in:", error);
@@ -116,12 +118,12 @@ const addExpireJob = async (ticketIds, showId) => {
 
     const counts = await expireQueue.getJobCounts();
     console.log(
-      `🚀 [Expire Queue] Đã bắn job expire cho ${ticketIds.length} ticket(s) của show ${showId}`
+      `🚀 [Expire Queue] Đã bắn job expire cho ${ticketIds.length} ticket(s) của show ${showId}`,
     );
     console.log(
       `📥 [Expire Queue] waiting=${counts.waiting}, active=${
         counts.active
-      }, delayed=${counts.delayed || 0}, completed=${counts.completed || 0}`
+      }, delayed=${counts.delayed || 0}, completed=${counts.completed || 0}`,
     );
   } catch (error) {
     console.error("❌ [Expire Queue] Lỗi gửi job expire:", error);

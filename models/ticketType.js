@@ -12,6 +12,7 @@ const ticketTypeSchema = new mongoose.Schema(
     minPurchase: { type: Number, required: true, default: 1 },
     maxPurchase: { type: Number, required: true, default: 10 },
     description: { type: String },
+    onChainId: { type: Number },
     show: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Show",

@@ -150,6 +150,7 @@ const login = async ({ email, password }) => {
       fullName: user.fullName,
       phone: user.phone,
       role: user.role,
+      walletAddress: user.walletAddress, // Trả thêm walletAddress về Frontend
     },
   };
 };
@@ -204,6 +205,7 @@ const refreshToken = async (token) => {
         fullName: user.fullName,
         phone: user.phone,
         role: user.role,
+        walletAddress: user.walletAddress, // Trả thêm walletAddress
       },
     };
   } catch (err) {

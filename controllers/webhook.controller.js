@@ -76,7 +76,7 @@ const handleMintSuccessWebhook = async (req, res) => {
       console.log("📚 [MINT WEBHOOK] Processing tokenId mapping...");
 
       for (const mapEntry of mapping) {
-        const { orderId, tokenIds } = mapEntry || {};
+        const { orderId, tokenIds, onChainId } = mapEntry || {};
         if (!orderId || !Array.isArray(tokenIds) || tokenIds.length === 0) {
           console.warn(
             "⚠️ [MINT WEBHOOK] Invalid mapping entry, skip:",
@@ -98,11 +98,25 @@ const handleMintSuccessWebhook = async (req, res) => {
           tokenIds,
         );
 
-        // Lấy danh sách tickets của order này cần được gán tokenId
-        const tickets = await Ticket.find({
+        const matchCondition = {
           order: orderId,
           mintStatus: { $in: ["unminted", "pending"] },
-        })
+        };
+
+        // Nếu Worker trả về onChainId, tìm TicketType tương ứng để gán đúng loại vé
+        if (onChainId) {
+          const TicketType = require("../models/ticketType");
+          const tt = await TicketType.findOne({ onChainId }).lean();
+          if (tt) {
+            matchCondition.ticketType = tt._id;
+            console.log(
+              `📌 [MINT WEBHOOK] Matching with TicketType: ${tt._id} (onChainId: ${onChainId})`,
+            );
+          }
+        }
+
+        // Lấy danh sách tickets của order này cần được gán tokenId
+        const tickets = await Ticket.find(matchCondition)
           .sort({ createdAt: 1 })
           .lean();
 
