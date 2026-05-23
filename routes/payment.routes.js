@@ -10,7 +10,17 @@ router.get("/vnpay-return", paymentController.handleVnpayReturn);
 router.post(
   "/finalize-order",
   userExtractor,
-  paymentController.handleFinalizeOrder
+  paymentController.handleFinalizeOrder,
 );
+
+// Finalize order after Web3 on-chain purchase (FE sends txHash)
+router.post(
+  "/finalize-order-web3",
+  userExtractor,
+  paymentController.handleFinalizeOrderWeb3,
+);
+
+// Callback từ worker sau khi relayer mua vé on-chain xong
+router.post("/relayer-callback", paymentController.handleRelayerCallback);
 
 module.exports = router;

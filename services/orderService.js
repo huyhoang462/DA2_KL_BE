@@ -27,7 +27,7 @@ const cancelOrderAndReleaseTickets = async (orderId) => {
 
     if (order.status !== "pending") {
       console.log(
-        `[ORDER CLEANUP] Order ${orderId} status is ${order.status}, not pending. Skip.`
+        `[ORDER CLEANUP] Order ${orderId} status is ${order.status}, not pending. Skip.`,
       );
       await session.commitTransaction();
       return;
@@ -39,7 +39,7 @@ const cancelOrderAndReleaseTickets = async (orderId) => {
 
     // Lấy các OrderItem để trả lại số lượng đã reserve
     const orderItems = await OrderItem.find({ order: orderId }).session(
-      session
+      session,
     );
 
     let releasedCount = 0;
@@ -48,13 +48,13 @@ const cancelOrderAndReleaseTickets = async (orderId) => {
       await TicketType.findByIdAndUpdate(
         item.ticketType,
         { $inc: { quantitySold: -item.quantity } },
-        { session }
+        { session },
       );
       releasedCount += item.quantity;
     }
 
     console.log(
-      `[ORDER CLEANUP] Order ${orderId} cancelled, released ${releasedCount} tickets back to inventory.`
+      `[ORDER CLEANUP] Order ${orderId} cancelled, released ${releasedCount} tickets back to inventory.`,
     );
 
     await session.commitTransaction();
@@ -69,7 +69,14 @@ const cancelOrderAndReleaseTickets = async (orderId) => {
 };
 
 const createOrder = async (orderData, buyerId, retryCount = 0) => {
-  const { eventId, showId, exchangeRateVndPerUsdt, items } = orderData;
+  const {
+    eventId,
+    showId,
+    exchangeRateVndPerUsdt,
+    items,
+    paymentMethod = "vnd",
+    checkoutData = {},
+  } = orderData;
   const maxRetries = 3;
 
   if (
@@ -79,7 +86,9 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
     !Array.isArray(items) ||
     items.length === 0
   ) {
-    const error = new Error("Missing required fields: eventId, showId, exchangeRateVndPerUsdt, items");
+    const error = new Error(
+      "Missing required fields: eventId, showId, exchangeRateVndPerUsdt, items",
+    );
     error.status = 400;
     throw error;
   }
@@ -135,15 +144,15 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
 
     if (pendingOrders.length > 0) {
       console.log(
-        `[CREATE ORDER] Found ${pendingOrders.length} pending order(s). Cancelling all...`
+        `[CREATE ORDER] Found ${pendingOrders.length} pending order(s). Cancelling all...`,
       );
 
       await Promise.all(
-        pendingOrders.map((order) => cancelOrderAndReleaseTickets(order._id))
+        pendingOrders.map((order) => cancelOrderAndReleaseTickets(order._id)),
       );
 
       console.log(
-        `[CREATE ORDER] ✅ Cancelled ${pendingOrders.length} pending order(s)`
+        `[CREATE ORDER] ✅ Cancelled ${pendingOrders.length} pending order(s)`,
       );
     }
 
@@ -156,6 +165,15 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
     if (!event) {
       const error = new Error("Event not found");
       error.status = 404;
+      throw error;
+    }
+
+    // CHECK MINTING STATUS: Khách chỉ mua được vé khi sự kiện đã được mint thành công lên chuỗi (trạng thái upcoming hoặc ongoing)
+    if (!["upcoming", "ongoing"].includes(event.status)) {
+      const error = new Error(
+        "Vé sự kiện chưa sẵn sàng để bán hoặc sự kiện hiện không hoạt động (Chưa Mint On-chain)",
+      );
+      error.status = 400;
       throw error;
     }
 
@@ -182,7 +200,7 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
 
     if (ticketTypes.length !== ticketTypeIds.length) {
       const error = new Error(
-        "Some ticket types not found or don't belong to this show"
+        "Some ticket types not found or don't belong to this show",
       );
       error.status = 404;
       throw error;
@@ -210,7 +228,7 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
 
         // Lấy thông tin mới nhất trong session
         const currentTicketType = await TicketType.findById(
-          ticketType._id
+          ticketType._id,
         ).session(session);
 
         if (!currentTicketType) {
@@ -219,12 +237,21 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
           throw error;
         }
 
+        // CHECK ON-CHAIN ID: Đảm bảo Ticket đã được gán mã từ Blockchain
+        if (!currentTicketType.onChainId) {
+          const error = new Error(
+            `Hạng vé ${currentTicketType.name} chưa được gắn mã Blockchain (onChainId). Vui lòng thử lại sau.`,
+          );
+          error.status = 400;
+          throw error;
+        }
+
         // Kiểm tra số lượng còn lại
         const availableQuantity =
           currentTicketType.quantityTotal - currentTicketType.quantitySold;
         if (item.quantity > availableQuantity) {
           const error = new Error(
-            `Not enough tickets available for ${ticketType.name}. Available: ${availableQuantity}, Requested: ${item.quantity}`
+            `Not enough tickets available for ${ticketType.name}. Available: ${availableQuantity}, Requested: ${item.quantity}`,
           );
           error.status = 400;
           throw error;
@@ -233,7 +260,7 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
         // Kiểm tra min/max purchase (nếu có)
         if (ticketType.minPurchase && item.quantity < ticketType.minPurchase) {
           const error = new Error(
-            `Minimum purchase for ${ticketType.name} is ${ticketType.minPurchase}`
+            `Minimum purchase for ${ticketType.name} is ${ticketType.minPurchase}`,
           );
           error.status = 400;
           throw error;
@@ -241,7 +268,7 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
 
         if (ticketType.maxPurchase && item.quantity > ticketType.maxPurchase) {
           const error = new Error(
-            `Maximum purchase for ${ticketType.name} is ${ticketType.maxPurchase}`
+            `Maximum purchase for ${ticketType.name} is ${ticketType.maxPurchase}`,
           );
           error.status = 400;
           throw error;
@@ -282,6 +309,8 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
         buyer: buyerId,
         totalAmount,
         exchangeRateVndPerUsdt,
+        paymentMethod,
+        checkoutData,
         status: "pending",
         expiresAt,
         walletAddress: buyer.walletAddress,
@@ -316,13 +345,13 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
             console.log(
               `Write conflict in bulkWrite, retrying... (${
                 retryCount + 1
-              }/${maxRetries})`
+              }/${maxRetries})`,
             );
             await session.abortTransaction();
             await session.endSession();
 
             await new Promise((resolve) =>
-              setTimeout(resolve, 100 * Math.pow(2, retryCount))
+              setTimeout(resolve, 100 * Math.pow(2, retryCount)),
             );
             return createOrder(orderData, buyerId, retryCount + 1);
           }
@@ -334,17 +363,38 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
       console.log(`Transaction committed for order ${savedOrder.id}`);
 
       // --- TRẢ VỀ KẾT QUẢ ---
+      const totalQuantity = orderItemsData.reduce(
+        (sum, item) => sum + item.quantity,
+        0,
+      );
+
       return {
         orderId: savedOrder.id,
+        orderCode: savedOrder.orderCode,
+        eventId,
+        showId,
+        buyerAddress: buyer.walletAddress,
+        recipient: buyer.walletAddress,
+        paymentMethod: savedOrder.paymentMethod,
         totalAmount: savedOrder.totalAmount,
         exchangeRateVndPerUsdt: savedOrder.exchangeRateVndPerUsdt,
+        totalAmountVnd:
+          savedOrder.totalAmount * (savedOrder.exchangeRateVndPerUsdt || 0),
+        quantity: totalQuantity,
+        unitPrice:
+          totalQuantity > 0 ? savedOrder.totalAmount / totalQuantity : 0,
         expiresAt: savedOrder.expiresAt,
         status: savedOrder.status,
+        checkoutData,
         items: orderItemsData.map((item) => ({
           ticketTypeId: item.ticketType.toString(),
           ticketTypeName: ticketTypes.find(
-            (tt) => tt._id.toString() === item.ticketType.toString()
-          ).name,
+            (tt) => tt._id.toString() === item.ticketType.toString(),
+          )?.name,
+          onChainId:
+            ticketTypes.find(
+              (tt) => tt._id.toString() === item.ticketType.toString(),
+            )?.onChainId || null,
           quantity: item.quantity,
           priceAtPurchase: item.priceAtPurchase,
           subtotal: item.quantity * item.priceAtPurchase,
@@ -360,10 +410,10 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
         retryCount < maxRetries
       ) {
         console.log(
-          `Transaction conflict, retrying... (${retryCount + 1}/${maxRetries})`
+          `Transaction conflict, retrying... (${retryCount + 1}/${maxRetries})`,
         );
         await new Promise((resolve) =>
-          setTimeout(resolve, 100 * Math.pow(2, retryCount))
+          setTimeout(resolve, 100 * Math.pow(2, retryCount)),
         );
         return createOrder(orderData, buyerId, retryCount + 1);
       }
@@ -381,10 +431,10 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
       retryCount < maxRetries
     ) {
       console.log(
-        `Top-level conflict, retrying... (${retryCount + 1}/${maxRetries})`
+        `Top-level conflict, retrying... (${retryCount + 1}/${maxRetries})`,
       );
       await new Promise((resolve) =>
-        setTimeout(resolve, 100 * Math.pow(2, retryCount))
+        setTimeout(resolve, 100 * Math.pow(2, retryCount)),
       );
       return createOrder(orderData, buyerId, retryCount + 1);
     }
@@ -424,20 +474,20 @@ const getOrderStatus = async (orderId) => {
       const updatedOrder = await Order.findByIdAndUpdate(
         orderId,
         { status: "cancelled" },
-        { session, new: true }
+        { session, new: true },
       );
 
       if (updatedOrder) {
         // Release tickets (trừ lại quantitySold)
         const orderItems = await OrderItem.find({ order: orderId }).session(
-          session
+          session,
         );
 
         for (const item of orderItems) {
           await TicketType.findByIdAndUpdate(
             item.ticketType,
             { $inc: { quantitySold: -item.quantity } },
-            { session }
+            { session },
           );
         }
 
@@ -481,18 +531,18 @@ const cleanupExpiredOrders = async () => {
         await Order.findByIdAndUpdate(
           order._id,
           { status: "cancelled" },
-          { session }
+          { session },
         );
 
         // Release tickets
         const orderItems = await OrderItem.find({ order: order._id }).session(
-          session
+          session,
         );
         for (const item of orderItems) {
           await TicketType.findByIdAndUpdate(
             item.ticketType,
             { $inc: { quantitySold: -item.quantity } },
-            { session }
+            { session },
           );
         }
 
@@ -1026,7 +1076,7 @@ const cancelOrder = async (orderId) => {
     // Chỉ cancel được order pending
     if (order.status !== "pending") {
       const error = new Error(
-        `Cannot cancel order with status: ${order.status}`
+        `Cannot cancel order with status: ${order.status}`,
       );
       error.status = 400;
       throw error;
@@ -1038,14 +1088,14 @@ const cancelOrder = async (orderId) => {
 
     // Release tickets
     const orderItems = await OrderItem.find({ order: orderId }).session(
-      session
+      session,
     );
 
     for (const item of orderItems) {
       await TicketType.findByIdAndUpdate(
         item.ticketType,
         { $inc: { quantitySold: -item.quantity } },
-        { session }
+        { session },
       );
     }
 
@@ -1089,7 +1139,7 @@ const resendPaymentLink = async (orderId) => {
     // Chỉ resend cho order pending
     if (order.status !== "pending") {
       const error = new Error(
-        "Can only resend payment link for pending orders"
+        "Can only resend payment link for pending orders",
       );
       error.status = 400;
       throw error;

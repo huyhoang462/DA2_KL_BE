@@ -368,6 +368,8 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
         tt.onChainId = onChainId;
         await tt.save();
 
+        console.log(`[ADMIN EVENT SERVICE] 🎟️ Generated onChainId: ${onChainId} for TicketType: ${tt.name} (${tt._id})`);
+
         const nonce = Math.floor(Math.random() * 1000000000);
 
         const voucherData = {

@@ -3,11 +3,145 @@ const Order = require("../models/order");
 const OrderItem = require("../models/orderItem");
 const TicketType = require("../models/ticketType");
 const Ticket = require("../models/ticket");
-const { addMintJob } = require("../services/queueService");
+const {
+  addMintJob,
+  addRelayerBuyTicketJob,
+} = require("../services/queueService");
 const mongoose = require("mongoose");
 const { createTicketsForOrder } = require("../services/ticketService");
 const transactionService = require("../services/transactionService");
 const { createNotificationSafe } = require("../services/notificationService");
+const { ethers } = require("ethers");
+
+const buildRelayerPayload = async (order, orderItems) => {
+  const populatedItems = await OrderItem.find({ order: order._id })
+    .populate({
+      path: "ticketType",
+      select: "show",
+      populate: {
+        path: "show",
+        select: "event",
+      },
+    })
+    .lean();
+
+  const firstItem = populatedItems[0];
+  const eventId = firstItem?.ticketType?.show?.event?.toString() || null;
+  const showId = firstItem?.ticketType?.show?._id?.toString() || null;
+  const quantity = orderItems.reduce((sum, item) => sum + item.quantity, 0);
+
+  return {
+    orderId: order._id.toString(),
+    orderCode: order.orderCode || null,
+    eventId,
+    showId,
+    quantity,
+    buyerAddress: order.walletAddress,
+    recipient: order.walletAddress,
+    price: quantity > 0 ? order.totalAmount / quantity : 0,
+    totalPrice: order.totalAmount,
+    totalPriceVnd: order.totalAmount * order.exchangeRateVndPerUsdt,
+    exchangeRateVndPerUsdt: order.exchangeRateVndPerUsdt,
+    callbackUrl:
+      process.env.RELAYER_CALLBACK_URL ||
+      `${process.env.SERVER_URL}/api/payment/relayer-callback`,
+    callbackSecret: process.env.RELAYER_CALLBACK_SECRET || null,
+    contractCall: {
+      method: "relayerBuyTicket",
+      args: [eventId, quantity, order.walletAddress],
+    },
+  };
+};
+
+const handleRelayerCallback = async (req, res) => {
+  try {
+    const expectedSecret = process.env.RELAYER_CALLBACK_SECRET;
+    const providedSecret = req.header("x-relayer-callback-secret");
+
+    if (expectedSecret && providedSecret !== expectedSecret) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized callback",
+      });
+    }
+
+    const {
+      orderId,
+      status,
+      txHash,
+      chainId,
+      contractAddress,
+      blockNumber,
+      relayerAddress,
+      errorMessage,
+      receipt,
+    } = req.body;
+
+    if (!orderId || !status) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: orderId, status",
+      });
+    }
+
+    const normalizedStatus = String(status).toLowerCase();
+    if (!["success", "failed"].includes(normalizedStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status. Expected success or failed",
+      });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    if (order.status !== "paid") {
+      return res.status(409).json({
+        success: false,
+        message: `Order status must be paid before relayer callback. Current status: ${order.status}`,
+      });
+    }
+
+    order.paymentInfo = {
+      ...(order.paymentInfo || {}),
+      relayer: {
+        status: normalizedStatus,
+        txHash: txHash || null,
+        chainId: chainId || null,
+        contractAddress: contractAddress || null,
+        blockNumber: blockNumber || null,
+        relayerAddress: relayerAddress || null,
+        errorMessage: errorMessage || null,
+        callbackReceivedAt: new Date(),
+        receipt: receipt || null,
+      },
+    };
+
+    if (normalizedStatus === "success" && txHash) {
+      order.txHash = txHash;
+    }
+
+    await order.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Relayer callback processed successfully",
+      orderId: order._id.toString(),
+      relayerStatus: normalizedStatus,
+    });
+  } catch (error) {
+    console.error("[RELAYER CALLBACK] Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
 
 const handleVnpayIpn = async (req, res) => {
   try {
@@ -337,10 +471,30 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
           `⚠️ Bỏ qua Mint: Không tìm thấy ví hoặc số lượng vé = 0. (Wallet: ${buyerWallet})`,
         );
       }
+
+      if (order.paymentMethod === "vnd" || order.paymentMethod === "vnpay") {
+        const relayerPayload = await buildRelayerPayload(order, existingItems);
+        if (
+          relayerPayload.eventId &&
+          relayerPayload.showId &&
+          relayerPayload.quantity > 0 &&
+          relayerPayload.buyerAddress
+        ) {
+          await addRelayerBuyTicketJob(relayerPayload);
+          console.log(
+            `🚀 [RELAYER BUY] Enqueued for order ${order._id} from payment success flow`,
+          );
+        } else {
+          console.warn(
+            `⚠️ [RELAYER BUY] Skip enqueue for order ${order._id} due to incomplete payload`,
+            relayerPayload,
+          );
+        }
+      }
     } catch (queueError) {
       // Chỉ log lỗi queue, không throw để tránh rollback lại transaction thanh toán
       console.error(
-        "❌ Lỗi đẩy Job Mint (User đã thanh toán nhưng chưa Mint):",
+        "❌ Lỗi đẩy Job Queue sau thanh toán thành công:",
         queueError,
       );
     }
@@ -654,9 +808,193 @@ const handleFinalizeOrder = async (req, res) => {
 module.exports = {
   handleVnpayIpn,
   handleVnpayReturn,
+  handleRelayerCallback,
   processSuccessfulPayment,
   processFailedPayment,
   processCancelledPayment, // ⭐ Export thêm
   getFailureReason, // ⭐ Export để dùng ở nơi khác
   handleFinalizeOrder,
+  handleFinalizeOrderWeb3,
+};
+
+
+/**
+ * Handle finalize order for Web3 flow
+ * - FE provides `orderId` and `txHash`
+ * - BE verifies tx on-chain, extracts tokenIds from Transfer events
+ * - Creates tickets (if missing) and assigns tokenIds + mintStatus = 'minted'
+ */
+async function handleFinalizeOrderWeb3(req, res) {
+  try {
+    const { orderId, txHash } = req.body;
+
+    if (!orderId || !txHash) {
+      return res.status(400).json({ success: false, message: "Missing orderId or txHash" });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    // Authz: caller must be buyer
+    if (req.user.id !== order.buyer.toString()) {
+      return res.status(403).json({ success: false, message: "Unauthorized" });
+    }
+
+    // Idempotency: if already processed with same txHash or already paid
+    if (order.status === "paid" && order.txHash === txHash) {
+      return res.status(200).json({ success: true, message: "Order already processed" });
+    }
+
+    const session = await mongoose.startSession();
+
+    try {
+      await session.startTransaction();
+
+      // 1) Verify on-chain
+      const rpcUrl = process.env.WEB3_RPC_URL;
+      if (!rpcUrl) {
+        throw new Error("WEB3_RPC_URL is not configured");
+      }
+
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const receipt = await provider.getTransactionReceipt(txHash);
+      if (!receipt) {
+        throw new Error("Transaction receipt not found or not yet mined");
+      }
+
+      // Check status
+      if (Number(receipt.status) !== 1) {
+        // mark failed
+        await processFailedPayment(order, `web3_tx_status_${receipt.status}`);
+        await session.commitTransaction();
+        return res.status(400).json({ success: false, message: "On-chain transaction failed" });
+      }
+
+      const contractAddress = (process.env.SMART_CONTRACT_ADDRESS || "").toLowerCase();
+      if (!contractAddress) {
+        throw new Error("SMART_CONTRACT_ADDRESS not configured");
+      }
+
+      if (!receipt.to || receipt.to.toLowerCase() !== contractAddress) {
+        throw new Error("Transaction 'to' does not match expected contract address");
+      }
+
+      // NOTE: Do not enforce strict 'from' equality here. FE may submit txs sent
+      // by a relayer or different signer; we instead rely on Transfer events
+      // to attribute minted tokenIds to buyer. Keep an audit log for tracing.
+      console.log(
+        "[FINALIZE ORDER WEB3] receipt.from:",
+        receipt.from,
+        "order.walletAddress:",
+        order.walletAddress,
+      );
+
+      // Extract Transfer tokenIds
+      const transferTopic = ethers.id("Transfer(address,address,uint256)");
+      const tokenIds = [];
+      for (const log of receipt.logs || []) {
+        if (!log.topics || log.topics.length === 0) continue;
+        if (log.address && log.address.toLowerCase() === contractAddress && log.topics[0] === transferTopic) {
+          // tokenId is topics[3] (indexed)
+          const raw = log.topics[3];
+          try {
+            const id = ethers.toBigInt(raw).toString();
+            tokenIds.push(id);
+          } catch (e) {
+            console.warn("Unable to parse tokenId from log topic:", raw, e);
+          }
+        }
+      }
+
+      // 2) Verify counts vs order items
+      const orderItems = await OrderItem.find({ order: order._id }).session(session);
+      const totalQty = orderItems.reduce((s, it) => s + it.quantity, 0);
+
+      if (tokenIds.length !== totalQty) {
+        throw new Error(`Token IDs count (${tokenIds.length}) does not match order quantity (${totalQty})`);
+      }
+
+      // 3) Update order status & payment info
+      order.status = "paid";
+      order.txHash = txHash;
+      order.paymentInfo = {
+        ...(order.paymentInfo || {}),
+        method: "web3",
+        txHash,
+        contractAddress: receipt.to,
+        blockNumber: receipt.blockNumber,
+        verifiedAt: new Date(),
+      };
+
+      await order.save({ session });
+
+      // 4) Create tickets (if not exist) — reuse createTicketsForOrder
+      const existingTickets = await Ticket.find({ order: order._id }).session(session);
+      let createdTickets = existingTickets;
+      if (existingTickets.length === 0) {
+        createdTickets = await createTicketsForOrder(order._id, order.buyer, session);
+      }
+
+      if (createdTickets.length !== tokenIds.length) {
+        throw new Error("Created tickets count mismatch");
+      }
+
+      // 5) Assign tokenIds to tickets and mark minted
+      for (let i = 0; i < createdTickets.length; i++) {
+        const t = createdTickets[i];
+        const tokenId = tokenIds[i];
+        await Ticket.findByIdAndUpdate(
+          t._id,
+          {
+            tokenId: tokenId.toString(),
+            mintStatus: "minted",
+            blockchainNetwork: receipt.chainId || null,
+          },
+          { session },
+        );
+      }
+
+      // 6) Create transaction record
+      await transactionService.createTransaction(
+        {
+          orderId: order._id,
+          amount: order.totalAmount,
+          paymentMethod: "web3",
+          transactionCode: txHash,
+          status: "success",
+        },
+        session,
+      );
+
+      await session.commitTransaction();
+
+      // Notification (best-effort, outside tx)
+      await createNotificationSafe({
+        recipientId: order.buyer,
+        type: "payment_success",
+        title: "Thanh toán on-chain thành công",
+        message: `Đơn hàng ${order.orderCode || order._id} đã xác thực on-chain và hoàn tất.`,
+        priority: "high",
+        metadata: {
+          orderId: order._id.toString(),
+          txHash,
+          tokenIds,
+        },
+        channels: ["in_app"],
+      });
+
+      return res.status(200).json({ success: true, message: "Order verified and updated successfully" });
+    } catch (err) {
+      if (session.inTransaction()) await session.abortTransaction();
+      console.error("[FINALIZE ORDER WEB3] Error:", err);
+      return res.status(400).json({ success: false, message: err.message });
+    } finally {
+      await session.endSession();
+    }
+  } catch (error) {
+    console.error("[FINALIZE ORDER WEB3] Fatal:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
 };
