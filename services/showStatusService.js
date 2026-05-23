@@ -12,14 +12,11 @@ const { addExpireJob } = require("./queueService");
 async function updateShowStatuses() {
   try {
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
     let updatedCount = 0;
 
-    // 1. Tìm các show sẽ chuyển sang "completed" (đã kết thúc theo ngày)
+    // 1. Tìm các show sẽ chuyển sang "completed" (đã kết thúc theo thời gian)
     const showsToComplete = await Show.find({
-      endTime: { $lt: today },
+      endTime: { $lt: now },
       status: { $ne: "completed" },
     })
       .select("_id")
@@ -34,42 +31,39 @@ async function updateShowStatuses() {
       },
       {
         $set: { status: "completed" },
-      }
+      },
     );
     updatedCount += completedResult.modifiedCount;
 
     // 2. Update shows thành "ongoing" (đang diễn ra)
     const ongoingResult = await Show.updateMany(
       {
-        // ngày(startTime) <= hôm nay <= ngày(endTime)
-        // tương đương startTime < tomorrow && endTime >= today
-        startTime: { $lt: tomorrow },
-        endTime: { $gte: today },
+        startTime: { $lte: now },
+        endTime: { $gte: now },
         status: { $ne: "ongoing" },
       },
       {
         $set: { status: "ongoing" },
-      }
+      },
     );
     updatedCount += ongoingResult.modifiedCount;
 
     // 3. Update shows thành "pending" (chưa bắt đầu)
     const pendingResult = await Show.updateMany(
       {
-        // ngày(startTime) > hôm nay => startTime >= tomorrow
-        startTime: { $gte: tomorrow },
+        startTime: { $gt: now },
         status: { $ne: "pending" },
       },
       {
         $set: { status: "pending" },
-      }
+      },
     );
     updatedCount += pendingResult.modifiedCount;
 
     // 4. Với các show vừa chuyển sang completed:
     //    - Tìm tất cả TicketType thuộc các show này
-    //    - Với mỗi show: tìm vé có mintStatus="minted" và status="pending"
-    //      -> cập nhật status="expired" và đẩy job sang Worker qua expire-queue
+    //    - Expire tất cả vé (trừ cancelled/expired) thuộc các show đó
+    //    - Với vé đã mint (mintStatus="minted") sẽ đẩy job sang Worker qua expire-queue
 
     if (showIdsToComplete.length > 0) {
       const ticketTypes = await TicketType.find({
@@ -87,39 +81,52 @@ async function updateShowStatuses() {
         ticketTypeIdsByShow.get(key).push(tt._id);
       }
 
-      for (const showId of showIdsToComplete) {
-        const showKey = showId.toString();
-        const ticketTypeIds = ticketTypeIdsByShow.get(showKey);
-        if (!ticketTypeIds || ticketTypeIds.length === 0) continue;
+      const allTicketTypeIds = ticketTypes.map((tt) => tt._id);
 
-        const ticketsToExpire = await Ticket.find({
-          ticketType: { $in: ticketTypeIds },
-          status: "pending",
-          mintStatus: "minted",
-        })
-          .select("_id tokenId")
-          .lean();
+      // Lấy danh sách tokenId các vé đã mint và sắp bị expire để bắn sang worker
+      const mintedTicketsToExpire = await Ticket.find({
+        ticketType: { $in: allTicketTypeIds },
+        status: { $nin: ["expired", "cancelled"] },
+        mintStatus: "minted",
+      })
+        .select("tokenId ticketType")
+        .lean();
 
-        if (!ticketsToExpire.length) continue;
+      // Expire tất cả vé thuộc các show vừa completed (trừ cancelled/expired)
+      const ticketUpdateResult = await Ticket.updateMany(
+        {
+          ticketType: { $in: allTicketTypeIds },
+          status: { $nin: ["expired", "cancelled"] },
+        },
+        { $set: { status: "expired" } },
+      );
 
-        const ticketObjectIds = ticketsToExpire.map((t) => t._id);
-        const tokenIds = ticketsToExpire.map((t) => t.tokenId).filter(Boolean);
+      if ((ticketUpdateResult.modifiedCount || 0) > 0) {
+        console.log(
+          `✅ Expired ${ticketUpdateResult.modifiedCount || 0} ticket(s) for completed show(s)`,
+        );
+      }
 
-        if (ticketObjectIds.length > 0) {
-          const ticketUpdateResult = await Ticket.updateMany(
-            { _id: { $in: ticketObjectIds } },
-            { $set: { status: "expired" } }
-          );
-
-          console.log(
-            `✅ Expired ${
-              ticketUpdateResult.modifiedCount || 0
-            } ticket(s) for completed show ${showKey}`
-          );
+      // Group tokenIds theo show để bắn job expire
+      if (mintedTicketsToExpire.length > 0) {
+        const ticketTypeToShow = new Map();
+        for (const tt of ticketTypes) {
+          ticketTypeToShow.set(tt._id.toString(), tt.show.toString());
         }
 
-        if (tokenIds.length > 0) {
-          await addExpireJob(tokenIds, showKey);
+        const tokenIdsByShow = new Map();
+        for (const t of mintedTicketsToExpire) {
+          if (!t.tokenId) continue;
+          const showId = ticketTypeToShow.get(t.ticketType.toString());
+          if (!showId) continue;
+          if (!tokenIdsByShow.has(showId)) tokenIdsByShow.set(showId, []);
+          tokenIdsByShow.get(showId).push(t.tokenId);
+        }
+
+        for (const [showId, tokenIds] of tokenIdsByShow.entries()) {
+          if (tokenIds.length > 0) {
+            await addExpireJob(tokenIds, showId);
+          }
         }
       }
     }
@@ -150,9 +157,6 @@ async function initializeShowStatuses() {
     console.log("\n🔄 Initializing show statuses...\n");
 
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
 
     // Đếm số shows chưa có status
     const showsWithoutStatus = await Show.countDocuments({
@@ -169,38 +173,35 @@ async function initializeShowStatuses() {
     // Update các shows completed
     const completedResult = await Show.updateMany(
       {
-        // endTime < today => ngày(endTime) < ngày hiện tại
-        endTime: { $lt: today },
+        endTime: { $lt: now },
         status: { $exists: false },
       },
       {
         $set: { status: "completed" },
-      }
+      },
     );
 
     // Update các shows ongoing
     const ongoingResult = await Show.updateMany(
       {
-        // ngày(startTime) <= hôm nay <= ngày(endTime)
-        startTime: { $lt: tomorrow },
-        endTime: { $gte: today },
+        startTime: { $lte: now },
+        endTime: { $gte: now },
         status: { $exists: false },
       },
       {
         $set: { status: "ongoing" },
-      }
+      },
     );
 
     // Update các shows pending
     const pendingResult = await Show.updateMany(
       {
-        // ngày(startTime) > hôm nay => startTime >= tomorrow
-        startTime: { $gte: tomorrow },
+        startTime: { $gt: now },
         status: { $exists: false },
       },
       {
         $set: { status: "pending" },
-      }
+      },
     );
 
     const totalUpdated =

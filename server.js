@@ -16,7 +16,41 @@ const app = express();
 
 mongoose
   .connect(process.env.MONGODB_URI)
-  .then(() => console.log("Connected to mongodb"))
+  .then(async () => {
+    console.log("Connected to mongodb");
+
+    // ========================================
+    // ⏱️ BACKGROUND JOBS
+    // - Initialize show statuses once
+    // - Every 5 minutes: update show statuses & expire ended-show tickets
+    // ========================================
+    try {
+      await initializeShowStatuses();
+    } catch (e) {
+      console.error("❌ Failed to initialize show statuses:", e);
+    }
+
+    const SHOW_STATUS_INTERVAL_MS =
+      parseInt(process.env.SHOW_STATUS_INTERVAL_MS || "300000", 10) ||
+      5 * 60 * 1000;
+
+    let isShowStatusJobRunning = false;
+    const runShowStatusJob = async () => {
+      if (isShowStatusJobRunning) return;
+      isShowStatusJobRunning = true;
+      try {
+        await updateShowStatuses();
+      } catch (e) {
+        console.error("❌ Show status job failed:", e);
+      } finally {
+        isShowStatusJobRunning = false;
+      }
+    };
+
+    // Run once shortly after boot, then every interval
+    setTimeout(runShowStatusJob, 5_000);
+    setInterval(runShowStatusJob, SHOW_STATUS_INTERVAL_MS);
+  })
   .catch((e) => console.log("Error to connect: ", e));
 // --- [FIX 1] CẤU HÌNH HELMET (Giải quyết lỗi đỏ Font chữ & Privy) ---
 app.use(
