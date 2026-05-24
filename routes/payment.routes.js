@@ -20,7 +20,4 @@ router.post(
   paymentController.handleFinalizeOrderWeb3,
 );
 
-// Callback từ worker sau khi relayer mua vé on-chain xong
-router.post("/relayer-callback", paymentController.handleRelayerCallback);
-
 module.exports = router;

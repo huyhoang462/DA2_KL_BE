@@ -3,67 +3,18 @@ const Order = require("../models/order");
 const OrderItem = require("../models/orderItem");
 const TicketType = require("../models/ticketType");
 const Ticket = require("../models/ticket");
-const {
-  addMintJob,
-  addRelayerBuyTicketJob,
-} = require("../services/queueService");
+const { addRelayerBuyTicketJob } = require("../services/queueService");
 const mongoose = require("mongoose");
 const { createTicketsForOrder } = require("../services/ticketService");
 const transactionService = require("../services/transactionService");
 const { createNotificationSafe } = require("../services/notificationService");
 const { ethers } = require("ethers");
 
-const buildRelayerPayload = async (order, orderItems) => {
-  const populatedItems = await OrderItem.find({ order: order._id })
-    .populate({
-      path: "ticketType",
-      select: "show",
-      populate: {
-        path: "show",
-        select: "event",
-      },
-    })
-    .lean();
-
-  const firstItem = populatedItems[0];
-  const eventId = firstItem?.ticketType?.show?.event?.toString() || null;
-  const showId = firstItem?.ticketType?.show?._id?.toString() || null;
-  const quantity = orderItems.reduce((sum, item) => sum + item.quantity, 0);
-
-  return {
-    orderId: order._id.toString(),
-    orderCode: order.orderCode || null,
-    eventId,
-    showId,
-    quantity,
-    buyerAddress: order.walletAddress,
-    recipient: order.walletAddress,
-    price: quantity > 0 ? order.totalAmount / quantity : 0,
-    totalPrice: order.totalAmount,
-    totalPriceVnd: order.totalAmount * order.exchangeRateVndPerUsdt,
-    exchangeRateVndPerUsdt: order.exchangeRateVndPerUsdt,
-    callbackUrl:
-      process.env.RELAYER_CALLBACK_URL ||
-      `${process.env.SERVER_URL}/api/payment/relayer-callback`,
-    callbackSecret: process.env.RELAYER_CALLBACK_SECRET || null,
-    contractCall: {
-      method: "relayerBuyTicket",
-      args: [eventId, quantity, order.walletAddress],
-    },
-  };
-};
-
+// Callback từ Worker sau khi relayer mua vé on-chain xong (cập nhật mintStatus của vé, lưu txHash, etc.)
 const handleRelayerCallback = async (req, res) => {
   try {
-    const expectedSecret = process.env.RELAYER_CALLBACK_SECRET;
-    const providedSecret = req.header("x-relayer-callback-secret");
-
-    if (expectedSecret && providedSecret !== expectedSecret) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized callback",
-      });
-    }
+    console.log("\n=== 🔁 RELAYER CALLBACK RECEIVED ===");
+    console.log("Timestamp:", new Date().toISOString());
 
     const {
       orderId,
@@ -77,7 +28,21 @@ const handleRelayerCallback = async (req, res) => {
       receipt,
     } = req.body;
 
+    console.log("[RELAYER CALLBACK] Payload summary:", {
+      orderId,
+      status,
+      txHash,
+      chainId,
+      contractAddress,
+      blockNumber,
+      relayerAddress,
+    });
+
     if (!orderId || !status) {
+      console.warn("[RELAYER CALLBACK] Missing required fields", {
+        orderId,
+        status,
+      });
       return res.status(400).json({
         success: false,
         message: "Missing required fields: orderId, status",
@@ -86,6 +51,9 @@ const handleRelayerCallback = async (req, res) => {
 
     const normalizedStatus = String(status).toLowerCase();
     if (!["success", "failed"].includes(normalizedStatus)) {
+      console.warn("[RELAYER CALLBACK] Invalid status received", {
+        status,
+      });
       return res.status(400).json({
         success: false,
         message: "Invalid status. Expected success or failed",
@@ -94,6 +62,7 @@ const handleRelayerCallback = async (req, res) => {
 
     const order = await Order.findById(orderId);
     if (!order) {
+      console.warn("[RELAYER CALLBACK] Order not found", { orderId });
       return res.status(404).json({
         success: false,
         message: "Order not found",
@@ -101,6 +70,10 @@ const handleRelayerCallback = async (req, res) => {
     }
 
     if (order.status !== "paid") {
+      console.warn("[RELAYER CALLBACK] Order is not in paid state", {
+        orderId,
+        currentStatus: order.status,
+      });
       return res.status(409).json({
         success: false,
         message: `Order status must be paid before relayer callback. Current status: ${order.status}`,
@@ -127,6 +100,76 @@ const handleRelayerCallback = async (req, res) => {
     }
 
     await order.save();
+    console.log("[RELAYER CALLBACK] Updated order paymentInfo.relayer", {
+      orderId: order._id.toString(),
+      relayerStatus: normalizedStatus,
+      txHash: order.txHash || null,
+    });
+
+    // If relayer reports success, attempt to mark tickets as minted and set order status
+    if (normalizedStatus === "success") {
+      try {
+        const session = await mongoose.startSession();
+        try {
+          await session.startTransaction();
+
+          // Update tickets for this order: set mintStatus = 'minted' and record some on-chain info
+          const ticketUpdate = {
+            $set: {
+              mintStatus: "minted",
+              blockchainNetwork:
+                chainId || (receipt && receipt.chainId) || null,
+              contractAddress: contractAddress || null,
+            },
+          };
+
+          const updateResult = await Ticket.updateMany(
+            { order: order._id, mintStatus: { $in: ["unminted", "pending"] } },
+            ticketUpdate,
+            { session },
+          );
+
+          const modifiedCount =
+            updateResult.modifiedCount ?? updateResult.nModified ?? 0;
+
+          // Also mark order as completed (new enum value)
+          // Only change if current status is 'paid' to preserve other flows
+          if (order.status === "paid") {
+            await Order.findByIdAndUpdate(
+              order._id,
+              { $set: { status: "completed" } },
+              { session },
+            );
+            console.log("[RELAYER CALLBACK] Updated order status", {
+              orderId: order._id.toString(),
+              from: "paid",
+              to: "completed",
+            });
+          }
+
+          await session.commitTransaction();
+
+          console.log(
+            `[RELAYER CALLBACK] Marked ${modifiedCount} tickets as minted and set order ${order._id} status=completed`,
+          );
+        } catch (innerErr) {
+          if (session.inTransaction()) await session.abortTransaction();
+          console.error(
+            "[RELAYER CALLBACK] Error updating tickets/order:",
+            innerErr,
+          );
+        } finally {
+          await session.endSession();
+        }
+      } catch (sessErr) {
+        console.error("[RELAYER CALLBACK] Could not start session:", sessErr);
+      }
+    } else {
+      console.log("[RELAYER CALLBACK] Received failed status from worker", {
+        orderId: order._id.toString(),
+        errorMessage: errorMessage || null,
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -424,12 +467,28 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
 
     // ============================================================
     // 👉 ĐOẠN 2: BẮN JOB SANG WORKER + CẬP NHẬT mintStatus
-    // (Đặt ở đây là an toàn nhất: DB đã xong, biến vẫn còn scope)
     // ============================================================
     try {
-      if (buyerWallet && totalTicketsToMint > 0) {
+      // Guardrails kiểm tra ví và số lượng vé
+      const isValidWallet =
+        buyerWallet &&
+        buyerWallet.trim() !== "" &&
+        buyerWallet.toLowerCase() !== "0x0" &&
+        buyerWallet !== "0x0000000000000000000000000000000000000000" &&
+        buyerWallet !== "0x" &&
+        buyerWallet !== "0X0000000000000000000000000000000000000000";
+
+      if (!isValidWallet) {
+        console.error(
+          `❌ [RELAYER QUEUE] Lỗi nghiêm trọng: Địa chỉ ví không hợp lệ (Wallet: ${buyerWallet}). Không thể đẩy Job đúc vé On-chain cho Order ${order._id}!`,
+        );
+      } else if (totalTicketsToMint <= 0) {
+        console.error(
+          `❌ [RELAYER QUEUE] Lỗi nghiêm trọng: Tổng số lượng vé cần đúc <= 0. Không thể đẩy Job cho Order ${order._id}!`,
+        );
+      } else {
         console.log(
-          `💳 [MINT QUEUE] Kích hoạt Mint NFT cho Order ${order._id} -> Wallet: ${buyerWallet} | Tickets: ${totalTicketsToMint}`,
+          `💳 [RELAYER QUEUE] Kích hoạt Mint NFT cho Order ${order._id} -> Wallet: ${buyerWallet} | Tickets: ${totalTicketsToMint}`,
         );
 
         // 4.1 Cập nhật mintStatus của tất cả tickets thuộc order này sang "pending"
@@ -445,50 +504,48 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
           `📌 [MINT STATUS] Order ${order._id}: set mintStatus=pending cho ${modifiedCount} ticket(s)`,
         );
 
-        // 4.2 Gửi job Mint sang Worker (từng loại vé)
-        const TicketType = require("../models/ticketType"); // Import model nếu chưa có
+        // 4.2 Cấu trúc Payload mảng phẳng
+        const TicketType = require("../models/ticketType");
+        const eventIds = [];
+        const quantities = [];
 
         for (const item of existingItems) {
           const tt = await TicketType.findById(item.ticketType).lean();
           if (tt && tt.onChainId) {
-            console.log(
-              `💳 [MINT QUEUE] Dispatching Mint Job: Order ${order._id} -> Wallet: ${buyerWallet} | onChainId: ${tt.onChainId} | QT: ${item.quantity}`,
-            );
-            await addMintJob(
-              buyerWallet,
-              item.quantity,
-              order._id.toString(),
-              tt.onChainId,
-            );
+            // Đẩy vào mảng song song
+            eventIds.push(Number(tt.onChainId)); // onChainId từ DB
+            quantities.push(Number(item.quantity)); // số lượng vé
           } else {
-            console.warn(
-              `⚠️ [MINT QUEUE] Thiếu onChainId cho TicketType ${item.ticketType} của Order ${order._id}`,
+            console.error(
+              `⚠️ [RELAYER QUEUE] Thiếu onChainId cho TicketType ${item.ticketType} của Order ${order._id}`,
             );
           }
         }
-      } else {
-        console.warn(
-          `⚠️ Bỏ qua Mint: Không tìm thấy ví hoặc số lượng vé = 0. (Wallet: ${buyerWallet})`,
-        );
-      }
 
-      if (order.paymentMethod === "vnd" || order.paymentMethod === "vnpay") {
-        const relayerPayload = await buildRelayerPayload(order, existingItems);
-        if (
-          relayerPayload.eventId &&
-          relayerPayload.showId &&
-          relayerPayload.quantity > 0 &&
-          relayerPayload.buyerAddress
-        ) {
-          await addRelayerBuyTicketJob(relayerPayload);
-          console.log(
-            `🚀 [RELAYER BUY] Enqueued for order ${order._id} from payment success flow`,
+        // Validate payload mảng trước khi đẩy
+        if (eventIds.length === 0 || eventIds.length !== quantities.length) {
+          console.error(
+            `❌ [RELAYER QUEUE] Payload không hợp lệ cho Order ${order._id}! eventIds: ${eventIds.length}, quantities: ${quantities.length}`,
           );
         } else {
-          console.warn(
-            `⚠️ [RELAYER BUY] Skip enqueue for order ${order._id} due to incomplete payload`,
-            relayerPayload,
-          );
+          // Chỉ đẩy nếu là thanh toán bằng fiat qua VNPay
+          if (
+            order.paymentMethod === "vnd" ||
+            order.paymentMethod === "vnpay"
+          ) {
+            const relayerPayload = {
+              orderId: order._id.toString(),
+              eventIds: eventIds,
+              quantities: quantities,
+              buyerAddress: buyerWallet,
+            };
+
+            await addRelayerBuyTicketJob(relayerPayload);
+            console.log(
+              `🚀 [RELAYER BATCH BUY] Enqueued for order ${order._id} from payment success flow`,
+              relayerPayload,
+            );
+          }
         }
       }
     } catch (queueError) {
@@ -817,7 +874,6 @@ module.exports = {
   handleFinalizeOrderWeb3,
 };
 
-
 /**
  * Handle finalize order for Web3 flow
  * - FE provides `orderId` and `txHash`
@@ -829,12 +885,16 @@ async function handleFinalizeOrderWeb3(req, res) {
     const { orderId, txHash } = req.body;
 
     if (!orderId || !txHash) {
-      return res.status(400).json({ success: false, message: "Missing orderId or txHash" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing orderId or txHash" });
     }
 
     const order = await Order.findById(orderId);
     if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
     }
 
     // Authz: caller must be buyer
@@ -844,7 +904,9 @@ async function handleFinalizeOrderWeb3(req, res) {
 
     // Idempotency: if already processed with same txHash or already paid
     if (order.status === "paid" && order.txHash === txHash) {
-      return res.status(200).json({ success: true, message: "Order already processed" });
+      return res
+        .status(200)
+        .json({ success: true, message: "Order already processed" });
     }
 
     const session = await mongoose.startSession();
@@ -869,16 +931,22 @@ async function handleFinalizeOrderWeb3(req, res) {
         // mark failed
         await processFailedPayment(order, `web3_tx_status_${receipt.status}`);
         await session.commitTransaction();
-        return res.status(400).json({ success: false, message: "On-chain transaction failed" });
+        return res
+          .status(400)
+          .json({ success: false, message: "On-chain transaction failed" });
       }
 
-      const contractAddress = (process.env.SMART_CONTRACT_ADDRESS || "").toLowerCase();
+      const contractAddress = (
+        process.env.SMART_CONTRACT_ADDRESS || ""
+      ).toLowerCase();
       if (!contractAddress) {
         throw new Error("SMART_CONTRACT_ADDRESS not configured");
       }
 
       if (!receipt.to || receipt.to.toLowerCase() !== contractAddress) {
-        throw new Error("Transaction 'to' does not match expected contract address");
+        throw new Error(
+          "Transaction 'to' does not match expected contract address",
+        );
       }
 
       // NOTE: Do not enforce strict 'from' equality here. FE may submit txs sent
@@ -896,7 +964,11 @@ async function handleFinalizeOrderWeb3(req, res) {
       const tokenIds = [];
       for (const log of receipt.logs || []) {
         if (!log.topics || log.topics.length === 0) continue;
-        if (log.address && log.address.toLowerCase() === contractAddress && log.topics[0] === transferTopic) {
+        if (
+          log.address &&
+          log.address.toLowerCase() === contractAddress &&
+          log.topics[0] === transferTopic
+        ) {
           // tokenId is topics[3] (indexed)
           const raw = log.topics[3];
           try {
@@ -909,11 +981,15 @@ async function handleFinalizeOrderWeb3(req, res) {
       }
 
       // 2) Verify counts vs order items
-      const orderItems = await OrderItem.find({ order: order._id }).session(session);
+      const orderItems = await OrderItem.find({ order: order._id }).session(
+        session,
+      );
       const totalQty = orderItems.reduce((s, it) => s + it.quantity, 0);
 
       if (tokenIds.length !== totalQty) {
-        throw new Error(`Token IDs count (${tokenIds.length}) does not match order quantity (${totalQty})`);
+        throw new Error(
+          `Token IDs count (${tokenIds.length}) does not match order quantity (${totalQty})`,
+        );
       }
 
       // 3) Update order status & payment info
@@ -931,10 +1007,16 @@ async function handleFinalizeOrderWeb3(req, res) {
       await order.save({ session });
 
       // 4) Create tickets (if not exist) — reuse createTicketsForOrder
-      const existingTickets = await Ticket.find({ order: order._id }).session(session);
+      const existingTickets = await Ticket.find({ order: order._id }).session(
+        session,
+      );
       let createdTickets = existingTickets;
       if (existingTickets.length === 0) {
-        createdTickets = await createTicketsForOrder(order._id, order.buyer, session);
+        createdTickets = await createTicketsForOrder(
+          order._id,
+          order.buyer,
+          session,
+        );
       }
 
       if (createdTickets.length !== tokenIds.length) {
@@ -985,7 +1067,10 @@ async function handleFinalizeOrderWeb3(req, res) {
         channels: ["in_app"],
       });
 
-      return res.status(200).json({ success: true, message: "Order verified and updated successfully" });
+      return res.status(200).json({
+        success: true,
+        message: "Order verified and updated successfully",
+      });
     } catch (err) {
       if (session.inTransaction()) await session.abortTransaction();
       console.error("[FINALIZE ORDER WEB3] Error:", err);
@@ -997,4 +1082,4 @@ async function handleFinalizeOrderWeb3(req, res) {
     console.error("[FINALIZE ORDER WEB3] Fatal:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
-};
+}

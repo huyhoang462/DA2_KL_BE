@@ -133,8 +133,7 @@ const addExpireJob = async (ticketIds, showId) => {
 // ------------------------------------------------------
 // Queue RELAYER BUY (mua vé on-chain sau khi thanh toán VND thành công)
 // ------------------------------------------------------
-const relayerBuyQueueName =
-  process.env.RELAYER_BUY_QUEUE_NAME || "relayer-buy-queue";
+const relayerBuyQueueName = process.env.RELAY_QUEUE_NAME || "relayer-buy-queue";
 
 const relayerBuyQueue = new Queue(relayerBuyQueueName, {
   connection,
