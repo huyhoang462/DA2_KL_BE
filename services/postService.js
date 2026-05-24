@@ -63,16 +63,22 @@ const getAllPosts = async ({
 
   const [posts, totalItems] = await Promise.all([
     Post.find(query)
+      .select("-relatedTickets._id") // Không trả về _id và __v của subdocument relatedTickets
       .populate("author", "fullName email role")
       .populate("relatedEvent", "name startDate bannerImageUrl status location")
       .populate({
-        path: "relatedTicket",
+        path: "relatedTickets.ticket",
         select: "status ticketType",
         populate: {
           path: "ticketType",
-          select: "name price",
+          select: "name price show",
+          populate: {
+            path: "show",
+            select: "name ",
+          },
         },
       })
+      .lean()
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit),
@@ -106,7 +112,15 @@ const getPostById = async (id) => {
   // 2. Tìm kiếm post theo ID và populate các field giống hệt hàm getAllPosts
   const post = await Post.findById(id)
     .populate("author", "fullName email role")
-    .populate("relatedEvent", "name startDate bannerImageUrl status location");
+    .populate("relatedEvent", "name startDate bannerImageUrl status location")
+    .populate({
+      path: "relatedTickets.ticket",
+      select: "status ticketType",
+      populate: {
+        path: "ticketType",
+        select: "name price",
+      },
+    });
 
   // 3. Kiểm tra xem post có tồn tại hay không
   if (!post) {
@@ -129,8 +143,7 @@ const createPost = async ({ author, data }) => {
     throw error;
   }
 
-  const { content, images, relatedEvent, relatedTicket, price, postType } =
-    data;
+  const { content, images, relatedEvent, relatedTickets, postType } = data;
 
   if (!content || typeof content !== "string" || !content.trim()) {
     const error = new Error("content is required");
@@ -174,32 +187,60 @@ const createPost = async ({ author, data }) => {
       throw error;
     }
   }
+  let normalizedRelatedTickets = [];
 
-  if (relatedTicket && !mongoose.Types.ObjectId.isValid(relatedTicket)) {
-    const error = new Error("Invalid relatedTicket ID format");
-    error.status = 400;
+  if (Array.isArray(relatedTickets)) {
+    normalizedRelatedTickets = relatedTickets.map((t) => ({
+      ticket: t?.ticketId,
+      price: t?.price,
+    }));
+  } else {
+    const error = new Error(
+      "Type of relatedTickets is invalid. It must be an array of { ticket: ObjectId, price: number }",
+    );
+    error.status = 404;
     throw error;
   }
 
-  if (relatedTicket) {
-    const existingTicket =
-      await Ticket.findById(relatedTicket).select("_id status");
-    if (!existingTicket) {
-      const error = new Error("Related ticket not found");
-      error.status = 404;
-      throw error;
+  if (normalizedRelatedTickets.length > 0) {
+    const seen = new Set();
+
+    for (const item of normalizedRelatedTickets) {
+      const ticketId = item?.ticket;
+      const itemPrice = item?.price;
+
+      if (!ticketId || !mongoose.Types.ObjectId.isValid(ticketId)) {
+        const error = new Error("Invalid relatedTickets ticket ID format");
+        error.status = 400;
+        throw error;
+      }
+
+      if (typeof itemPrice !== "number" || itemPrice <= 0) {
+        const error = new Error(
+          "Each relatedTickets item must have a positive price",
+        );
+        error.status = 400;
+        throw error;
+      }
+
+      const key = ticketId.toString();
+      if (seen.has(key)) {
+        const error = new Error("Duplicate ticket in relatedTickets array");
+        error.status = 400;
+        throw error;
+      }
+      seen.add(key);
     }
   }
 
-  if (
-    postType === "marketplace_listing" &&
-    (price === undefined || price <= 0)
-  ) {
-    const error = new Error(
-      "Price is required for marketplace_listing postType",
-    );
-    error.status = 400;
-    throw error;
+  if (postType === "marketplace_listing") {
+    if (normalizedRelatedTickets.length === 0) {
+      const error = new Error(
+        "relatedTickets is required for marketplace_listing postType",
+      );
+      error.status = 400;
+      throw error;
+    }
   }
 
   const session = await mongoose.startSession();
@@ -208,30 +249,47 @@ const createPost = async ({ author, data }) => {
   try {
     await session.startTransaction();
 
+    // Validate tickets exist before saving post (inside transaction)
+    const ticketIds = normalizedRelatedTickets.map((t) => t.ticket);
+    if (ticketIds.length > 0) {
+      const existingTickets = await Ticket.find({ _id: { $in: ticketIds } })
+        .select(" status")
+        .session(session)
+        .lean();
+
+      if (existingTickets.length !== ticketIds.length) {
+        const error = new Error("One or more related tickets not found");
+        error.status = 404;
+        throw error;
+      }
+    }
+
     newPost = new Post({
       author: author._id,
       authorType: author.role === "organizer" ? "organizer" : "user",
       content: trimmedContent,
       images: normalizedImages,
-      price: price || undefined,
       relatedEvent: relatedEvent || undefined,
-      relatedTicket: relatedTicket || undefined,
+      relatedTickets:
+        normalizedRelatedTickets.length > 0
+          ? normalizedRelatedTickets
+          : undefined,
       postType: postType || "event_promotion",
     });
 
     await newPost.save({ session });
 
-    // Nếu post liên quan ticket => chuyển vé sang selling
-    if (relatedTicket) {
-      const updatedTicket = await Ticket.findOneAndUpdate(
-        { _id: relatedTicket, status: "pending" },
+    // Nếu post liên quan ticket => chuyển tất cả vé sang selling
+    if (ticketIds.length > 0) {
+      const updateResult = await Ticket.updateMany(
+        { _id: { $in: ticketIds }, status: "pending" },
         { $set: { status: "selling" } },
-        { new: true, session },
-      ).select("_id status");
+        { session },
+      );
 
-      if (!updatedTicket) {
+      if ((updateResult.modifiedCount || 0) !== ticketIds.length) {
         const error = new Error(
-          "Ticket is not available for selling (must be pending)",
+          "One or more tickets are not available for selling (must be pending)",
         );
         error.status = 400;
         throw error;
@@ -248,7 +306,15 @@ const createPost = async ({ author, data }) => {
 
   const populatedPost = await Post.findById(newPost._id)
     .populate("author", "fullName email role")
-    .populate("relatedEvent", "name startDate bannerImageUrl status");
+    .populate("relatedEvent", "name startDate bannerImageUrl status")
+    .populate({
+      path: "relatedTickets.ticket",
+      select: "status ticketType",
+      populate: {
+        path: "ticketType",
+        select: "name price",
+      },
+    });
 
   return {
     message: "Post created successfully",
@@ -294,9 +360,18 @@ const deletePost = async ({ postId, userId, userRole }) => {
     await session.startTransaction();
 
     // Nếu post liên quan ticket và vé đang selling => trả vé về pending
-    if (post.relatedTicket) {
-      await Ticket.updateOne(
-        { _id: post.relatedTicket, status: "selling" },
+    const relatedTickets = Array.isArray(post.relatedTickets)
+      ? post.relatedTickets
+      : [];
+    const ticketIds = relatedTickets.map((t) => t?.ticket).filter(Boolean);
+
+    const uniqueTicketIds = Array.from(
+      new Set(ticketIds.map((id) => id.toString())),
+    );
+
+    if (uniqueTicketIds.length > 0) {
+      await Ticket.updateMany(
+        { _id: { $in: uniqueTicketIds }, status: "selling" },
         { $set: { status: "pending" } },
         { session },
       );

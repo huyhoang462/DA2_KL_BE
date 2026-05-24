@@ -44,7 +44,7 @@ const createTicketsForOrder = async (orderId, ownerId, session = null) => {
         orderId,
         item.ticketType._id.toString(),
         i,
-        qrCode
+        qrCode,
       );
 
       tickets.push({
@@ -79,7 +79,7 @@ const generateQRCode = (orderId, ticketTypeId, index) => {
     orderId,
     ticketTypeId.toString(),
     index,
-    timestamp
+    timestamp,
   );
 
   return qr;
@@ -158,7 +158,6 @@ const getTicketsByUserId = async (userId) => {
     };
   });
 };
-
 
 /**
  * Lấy các tickets pending (sắp diễn ra) của một user
@@ -289,12 +288,63 @@ const getPendingTicketsByUserId = async (userId) => {
 
   const tickets = await Ticket.aggregate(pipeline);
 
-  return tickets.map((ticket) => {
+  // Group result: events[] -> shows[] -> ticketTypes[] -> tickets[]
+  // Note: tickets is already sorted by show.startTime asc, createdAt desc.
+  const eventsMap = new Map();
+
+  for (const ticket of tickets) {
     const ticketType = ticket.ticketType;
     const show = ticket.show;
     const event = ticket.event;
 
-    return {
+    if (!event?._id || !show?._id || !ticketType?._id) continue;
+
+    const eventId = event._id.toString();
+    const showId = show._id.toString();
+    const ticketTypeId = ticketType._id.toString();
+
+    let eventNode = eventsMap.get(eventId);
+    if (!eventNode) {
+      eventNode = {
+        eventId,
+        eventName: event?.name || null,
+        bannerImageUrl: event?.bannerImageUrl || null,
+        location: event?.format === "offline" ? event?.location?.address : null,
+        format: event?.format || null,
+        shows: [],
+        _showsMap: new Map(),
+      };
+      eventsMap.set(eventId, eventNode);
+    }
+
+    let showNode = eventNode._showsMap.get(showId);
+    if (!showNode) {
+      showNode = {
+        showId,
+        showName: show?.name || null,
+        startTime: show?.startTime || null,
+        endTime: show?.endTime || null,
+        ticketTypes: [],
+        _ticketTypesMap: new Map(),
+      };
+      eventNode._showsMap.set(showId, showNode);
+      eventNode.shows.push(showNode);
+    }
+
+    let ticketTypeNode = showNode._ticketTypesMap.get(ticketTypeId);
+    if (!ticketTypeNode) {
+      ticketTypeNode = {
+        ticketTypeId,
+        ticketTypeName: ticketType?.name || null,
+        price: ticketType?.price ?? null,
+        description: ticketType?.description || null,
+        tickets: [],
+      };
+      showNode._ticketTypesMap.set(ticketTypeId, ticketTypeNode);
+      showNode.ticketTypes.push(ticketTypeNode);
+    }
+
+    ticketTypeNode.tickets.push({
       id: ticket._id.toString(),
       qrCode: ticket.qrCode,
       status: ticket.status,
@@ -303,26 +353,20 @@ const getPendingTicketsByUserId = async (userId) => {
       mintStatus: ticket.mintStatus,
       createdAt: ticket.createdAt,
       updatedAt: ticket.updatedAt,
+    });
+  }
 
-      ticketTypeId: ticketType?._id?.toString() || null,
-      ticketTypeName: ticketType?.name || null,
-      price: ticketType?.price ?? null,
-      description: ticketType?.description || null,
-
-      showId: show?._id?.toString() || null,
-      showName: show?.name || null,
-      startTime: show?.startTime || null,
-      endTime: show?.endTime || null,
-
-      eventId: event?._id?.toString() || null,
-      eventName: event?.name || null,
-      bannerImageUrl: event?.bannerImageUrl || null,
-      location: event?.format === "offline" ? event?.location?.address : null,
-      format: event?.format || null,
-    };
+  // Remove internal maps
+  const result = Array.from(eventsMap.values()).map((eventNode) => {
+    for (const showNode of eventNode.shows) {
+      delete showNode._ticketTypesMap;
+    }
+    delete eventNode._showsMap;
+    return eventNode;
   });
-};
 
+  return result;
+};
 
 /**
  * Lấy tickets theo order ID
@@ -346,17 +390,17 @@ const getTicketsByOrderId = async (orderId) => {
 
   const mintedCount = tickets.filter((t) => t.mintStatus === "minted").length;
   const pendingMintCount = tickets.filter(
-    (t) => t.mintStatus === "pending"
+    (t) => t.mintStatus === "pending",
   ).length;
   const unmintedCount = tickets.filter(
-    (t) => t.mintStatus === "unminted"
+    (t) => t.mintStatus === "unminted",
   ).length;
   const failedMintCount = tickets.filter(
-    (t) => t.mintStatus === "failed"
+    (t) => t.mintStatus === "failed",
   ).length;
 
   console.log(
-    `📈 [MINT STATUS] Order ${orderId}: total=${tickets.length}, minted=${mintedCount}, pending=${pendingMintCount}, unminted=${unmintedCount}, failed=${failedMintCount}`
+    `📈 [MINT STATUS] Order ${orderId}: total=${tickets.length}, minted=${mintedCount}, pending=${pendingMintCount}, unminted=${unmintedCount}, failed=${failedMintCount}`,
   );
 
   return tickets.map((ticket) => ({
@@ -483,12 +527,12 @@ const getTicketTypesByShow = async (showId) => {
   // Tính tổng các chỉ số
   const totalQuantity = ticketTypes.reduce(
     (sum, tt) => sum + tt.quantityTotal,
-    0
+    0,
   );
   const totalSold = ticketTypes.reduce((sum, tt) => sum + tt.quantitySold, 0);
   const totalCheckedIn = ticketTypes.reduce(
     (sum, tt) => sum + (tt.quantityCheckedIn || 0),
-    0
+    0,
   );
 
   return {
@@ -532,12 +576,12 @@ const getTicketTypesStatsForOrganizer = async (showId) => {
   // Tính tổng các chệ số
   const totalQuantity = ticketTypes.reduce(
     (sum, tt) => sum + tt.quantityTotal,
-    0
+    0,
   );
   const totalSold = ticketTypes.reduce((sum, tt) => sum + tt.quantitySold, 0);
   const totalCheckedIn = ticketTypes.reduce(
     (sum, tt) => sum + (tt.quantityCheckedIn || 0),
-    0
+    0,
   );
 
   // Tính tỷ lệ check-in tổng thể
@@ -556,7 +600,7 @@ const getTicketTypesStatsForOrganizer = async (showId) => {
       const ttCheckinRate =
         tt.quantitySold > 0
           ? parseFloat(
-              ((tt.quantityCheckedIn / tt.quantitySold) * 100).toFixed(2)
+              ((tt.quantityCheckedIn / tt.quantitySold) * 100).toFixed(2),
             )
           : 0;
 
@@ -786,7 +830,7 @@ const getTicketsListForOrganizer = async (showId, filters = {}) => {
   // ⚠️ Filter by ticket type - PHẢI filter TRƯC khi lookup
   if (ticketTypeId && mongoose.Types.ObjectId.isValid(ticketTypeId)) {
     ticketMatchConditions.ticketType = new mongoose.Types.ObjectId(
-      ticketTypeId
+      ticketTypeId,
     );
   }
 
