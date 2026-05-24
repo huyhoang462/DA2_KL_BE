@@ -16,7 +16,7 @@ const postSchema = new mongoose.Schema(
       // 'user' = đăng bán vé (future marketplace)
     },
 
-    // 
+    //
     // title: {
     //   type: String,
     //   required: true,
@@ -27,7 +27,7 @@ const postSchema = new mongoose.Schema(
     content: {
       type: String,
       required: true,
-      minlength: 50,
+      minlength: 10,
       maxlength: 5000,
     },
     images: [
@@ -55,6 +55,10 @@ const postSchema = new mongoose.Schema(
       default: "event_promotion",
       // 'event_promotion' = Organizer quảng cáo event
       // 'marketplace_listing' = User bán lại vé (future)
+    },
+    price: {
+      type: Number,
+      min: 0,
     },
 
     // category: {

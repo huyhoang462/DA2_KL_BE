@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Post = require("../models/post");
 const Event = require("../models/event");
+const Ticket = require("../models/ticket");
 
 const POST_STATUS_VALUES = ["pending", "published", "rejected", "removed"];
 const POST_TYPE_VALUES = ["event_promotion", "marketplace_listing"];
@@ -64,6 +65,14 @@ const getAllPosts = async ({
     Post.find(query)
       .populate("author", "fullName email role")
       .populate("relatedEvent", "name startDate bannerImageUrl status location")
+      .populate({
+        path: "relatedTicket",
+        select: "status ticketType",
+        populate: {
+          path: "ticketType",
+          select: "name price",
+        },
+      })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit),
@@ -120,7 +129,8 @@ const createPost = async ({ author, data }) => {
     throw error;
   }
 
-  const { content, images, relatedEvent, relatedTicket, postType } = data;
+  const { content, images, relatedEvent, relatedTicket, price, postType } =
+    data;
 
   if (!content || typeof content !== "string" || !content.trim()) {
     const error = new Error("content is required");
@@ -128,14 +138,7 @@ const createPost = async ({ author, data }) => {
     throw error;
   }
 
-  // const trimmedContent = content.trim();
-  // if (trimmedContent.length < 50 || trimmedContent.length > 5000) {
-  //   const error = new Error(
-  //     "content length must be between 50 and 5000 characters",
-  //   );
-  //   error.status = 400;
-  //   throw error;
-  // }
+  const trimmedContent = content.trim();
 
   let normalizedImages = [];
   if (images !== undefined) {
@@ -178,17 +181,70 @@ const createPost = async ({ author, data }) => {
     throw error;
   }
 
-  const newPost = new Post({
-    author: author._id,
-    authorType: author.role === "organizer" ? "organizer" : "user",
-    content: trimmedContent,
-    images: normalizedImages,
-    relatedEvent: relatedEvent || undefined,
-    relatedTicket: relatedTicket || undefined,
-    postType: postType || "event_promotion",
-  });
+  if (relatedTicket) {
+    const existingTicket =
+      await Ticket.findById(relatedTicket).select("_id status");
+    if (!existingTicket) {
+      const error = new Error("Related ticket not found");
+      error.status = 404;
+      throw error;
+    }
+  }
 
-  await newPost.save();
+  if (
+    postType === "marketplace_listing" &&
+    (price === undefined || price <= 0)
+  ) {
+    const error = new Error(
+      "Price is required for marketplace_listing postType",
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  const session = await mongoose.startSession();
+  let newPost;
+
+  try {
+    await session.startTransaction();
+
+    newPost = new Post({
+      author: author._id,
+      authorType: author.role === "organizer" ? "organizer" : "user",
+      content: trimmedContent,
+      images: normalizedImages,
+      price: price || undefined,
+      relatedEvent: relatedEvent || undefined,
+      relatedTicket: relatedTicket || undefined,
+      postType: postType || "event_promotion",
+    });
+
+    await newPost.save({ session });
+
+    // Nếu post liên quan ticket => chuyển vé sang selling
+    if (relatedTicket) {
+      const updatedTicket = await Ticket.findOneAndUpdate(
+        { _id: relatedTicket, status: "pending" },
+        { $set: { status: "selling" } },
+        { new: true, session },
+      ).select("_id status");
+
+      if (!updatedTicket) {
+        const error = new Error(
+          "Ticket is not available for selling (must be pending)",
+        );
+        error.status = 400;
+        throw error;
+      }
+    }
+
+    await session.commitTransaction();
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    await session.endSession();
+  }
 
   const populatedPost = await Post.findById(newPost._id)
     .populate("author", "fullName email role")
@@ -231,7 +287,30 @@ const deletePost = async ({ postId, userId, userRole }) => {
     throw error;
   }
 
-  const deletedPost = await Post.findByIdAndDelete(postId);
+  const session = await mongoose.startSession();
+  let deletedPost;
+
+  try {
+    await session.startTransaction();
+
+    // Nếu post liên quan ticket và vé đang selling => trả vé về pending
+    if (post.relatedTicket) {
+      await Ticket.updateOne(
+        { _id: post.relatedTicket, status: "selling" },
+        { $set: { status: "pending" } },
+        { session },
+      );
+    }
+
+    deletedPost = await Post.findByIdAndDelete(postId, { session });
+
+    await session.commitTransaction();
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    await session.endSession();
+  }
 
   return {
     message: "Post deleted successfully",

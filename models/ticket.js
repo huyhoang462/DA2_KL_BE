@@ -26,7 +26,7 @@ const ticketSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "checkedIn", "out", "expired", "cancelled"],
+      enum: ["pending", "checkedIn", "out",'selling', "expired", "cancelled"],
       default: "pending",
       required: true,
     },
