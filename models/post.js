@@ -43,11 +43,20 @@ const postSchema = new mongoose.Schema(
     },
 
     // 🔮 FUTURE: Cho marketplace bán lại vé NFT
-    relatedTicket: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Ticket",
-    },
-
+    relatedTickets: [
+      {
+        ticket: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Ticket",
+          required: true,
+        },
+        price: {
+          type: Number,
+          required: true,
+          min: 0,
+        },
+      },
+    ],
     // Phân loại
     postType: {
       type: String,
@@ -56,10 +65,7 @@ const postSchema = new mongoose.Schema(
       // 'event_promotion' = Organizer quảng cáo event
       // 'marketplace_listing' = User bán lại vé (future)
     },
-    price: {
-      type: Number,
-      min: 0,
-    },
+    // price: moved into relatedTicket[].price (each ticket can have its own price)
 
     // category: {
     //   type: String,
@@ -104,7 +110,7 @@ postSchema.index({ author: 1, createdAt: -1 });
 postSchema.index({ relatedEvent: 1 });
 postSchema.index({ status: 1, publishedAt: -1 });
 postSchema.index({ postType: 1, status: 1 });
-postSchema.index({ relatedTicket: 1 }); // Future marketplace
+postSchema.index({ "relatedTickets.ticket": 1 }); // Marketplace listing tickets
 
 // Transform khi trả về JSON
 postSchema.set("toJSON", {

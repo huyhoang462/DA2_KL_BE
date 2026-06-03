@@ -1,6 +1,11 @@
 const mongoose = require("mongoose");
 const Ticket = require("../models/ticket");
 const Order = require("../models/order");
+const {
+  onTicketListed,
+  onTicketCanceled,
+  onTicketSold,
+} = require("../services/marketplaceWebhookService");
 
 /**
  * Webhook: /api/webhooks/mint-success
@@ -274,8 +279,114 @@ const handleEventMintResult = async (req, res) => {
   return res.status(200).json({ message: "Webhook processed" });
 };
 
+/**
+ * Webhook: /api/webhook/marketplace/listed (alias) OR /api/webhooks/marketplace/listed
+ * Body:
+ * { tokenId: string|number, price?: string|number, seller?: string }
+ */
+const handleMarketplaceTicketListed = async (req, res) => {
+  try {
+    const { tokenId, price, seller } = req.body || {};
+
+    if (
+      tokenId === undefined ||
+      tokenId === null ||
+      String(tokenId).trim() === ""
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "tokenId is required",
+      });
+    }
+
+    const result = await onTicketListed({ tokenId, price, seller });
+    return res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    console.error("❌ Error handling marketplace listed webhook:", error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Internal server error",
+      details: error.details,
+    });
+  }
+};
+
+/**
+ * Webhook: /api/webhook/marketplace/canceled (alias) OR /api/webhooks/marketplace/canceled
+ * Body:
+ * { tokenId: string|number }
+ */
+const handleMarketplaceTicketCanceled = async (req, res) => {
+  try {
+    const { tokenId } = req.body || {};
+
+    if (
+      tokenId === undefined ||
+      tokenId === null ||
+      String(tokenId).trim() === ""
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "tokenId is required",
+      });
+    }
+
+    const result = await onTicketCanceled({ tokenId });
+    return res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    console.error("❌ Error handling marketplace canceled webhook:", error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Internal server error",
+      details: error.details,
+    });
+  }
+};
+
+/**
+ * Webhook: /api/webhook/marketplace/sold (alias) OR /api/webhooks/marketplace/sold
+ * Body:
+ * { tokenId: string|number, buyerPrivy: string, price?: string|number }
+ */
+const handleMarketplaceTicketSold = async (req, res) => {
+  try {
+    const { tokenId, buyerPrivy, price } = req.body || {};
+
+    if (
+      tokenId === undefined ||
+      tokenId === null ||
+      String(tokenId).trim() === ""
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "tokenId is required",
+      });
+    }
+
+    if (typeof buyerPrivy !== "string" || buyerPrivy.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        message: "buyerPrivy is required",
+      });
+    }
+
+    const result = await onTicketSold({ tokenId, buyerPrivy, price });
+    return res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    console.error("❌ Error handling marketplace sold webhook:", error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Internal server error",
+      details: error.details,
+    });
+  }
+};
+
 module.exports = {
   handleMintSuccessWebhook,
   handleTicketsAutoCheckinWebhook,
   handleEventMintResult,
+  handleMarketplaceTicketListed,
+  handleMarketplaceTicketCanceled,
+  handleMarketplaceTicketSold,
 };
