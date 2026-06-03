@@ -20,7 +20,7 @@ const handleGetAllEvents = async (req, res, next) => {
       format,
       startDate,
       endDate,
-      featured,
+      isFeatured,
       sortBy,
       sortOrder,
       page = 1,
@@ -34,12 +34,10 @@ const handleGetAllEvents = async (req, res, next) => {
       format,
       startDate,
       endDate,
-      featured,
+      isFeatured,
       sortBy,
       sortOrder,
     };
-
-    console.log("[ADMIN EVENT] Getting all events with filters:", filters);
 
     const result = await getAllEvents(filters, page, limit);
     res.status(200).json(result);
@@ -56,8 +54,6 @@ const handleGetAllEvents = async (req, res, next) => {
 const handleGetEventById = async (req, res, next) => {
   try {
     const { id } = req.params;
-
-    console.log("[ADMIN EVENT] Getting event by ID:", id);
 
     const result = await getEventById(id);
     res.status(200).json(result);
@@ -76,13 +72,6 @@ const handleUpdateEventStatus = async (req, res, next) => {
     const { id } = req.params;
     const { status, reason } = req.body;
     const adminId = req.user._id;
-
-    console.log("[ADMIN EVENT] Updating event status:", {
-      id,
-      status,
-      reason,
-      adminId,
-    });
 
     if (!status) {
       const error = new Error("Status is required");
@@ -107,13 +96,6 @@ const handleSetFeaturedEvent = async (req, res, next) => {
     const { id } = req.params;
     const { featured, featuredOrder, featuredUntil } = req.body;
 
-    console.log("[ADMIN EVENT] Setting featured event:", {
-      id,
-      featured,
-      featuredOrder,
-      featuredUntil,
-    });
-
     if (featured === undefined) {
       const error = new Error("Featured flag is required");
       error.status = 400;
@@ -124,7 +106,7 @@ const handleSetFeaturedEvent = async (req, res, next) => {
       id,
       featured,
       featuredOrder,
-      featuredUntil
+      featuredUntil,
     );
     res.status(200).json(result);
   } catch (error) {
@@ -143,8 +125,6 @@ const handleDeleteEvent = async (req, res, next) => {
     const { hardDelete = false } = req.query;
     const adminId = req.user._id;
 
-    console.log("[ADMIN EVENT] Deleting event:", { id, hardDelete, adminId });
-
     const result = await deleteEvent(id, adminId, hardDelete === "true");
     res.status(200).json(result);
   } catch (error) {
@@ -159,8 +139,6 @@ const handleDeleteEvent = async (req, res, next) => {
  */
 const handleGetEventStatistics = async (req, res, next) => {
   try {
-    console.log("[ADMIN EVENT] Getting event statistics...");
-
     const result = await getEventStatistics();
     res.status(200).json(result);
   } catch (error) {

@@ -26,7 +26,7 @@ const getAllEvents = async (filters = {}, page = 1, limit = 20) => {
       format, // online/offline
       startDate, // Từ ngày
       endDate, // Đến ngày
-      featured, // Chỉ lấy featured events
+      isFeatured, // Chỉ lấy featured events
       sortBy = "createdAt",
       sortOrder = "desc",
     } = filters;
@@ -69,7 +69,7 @@ const getAllEvents = async (filters = {}, page = 1, limit = 20) => {
     }
 
     // Filter by featured
-    if (featured === "true" || featured === true) {
+    if (isFeatured === "true" || isFeatured === true) {
       matchQuery.featured = true;
     }
 
@@ -189,6 +189,18 @@ const getAllEvents = async (filters = {}, page = 1, limit = 20) => {
     const totalEvents = results[0].metadata[0]?.total || 0;
     const totalPages = Math.ceil(totalEvents / parseInt(limit, 10));
 
+    const [
+      overviewTotal,
+      overviewPending,
+      overviewCompleted,
+      overviewFeatured,
+    ] = await Promise.all([
+      Event.countDocuments({}),
+      Event.countDocuments({ status: "pending" }),
+      Event.countDocuments({ status: "completed" }),
+      Event.countDocuments({ featured: true }),
+    ]);
+
     return {
       success: true,
       data: {
@@ -219,6 +231,12 @@ const getAllEvents = async (filters = {}, page = 1, limit = 20) => {
           totalPages,
           totalEvents,
           limit: parseInt(limit, 10),
+        },
+        overview: {
+          total: overviewTotal,
+          pending: overviewPending,
+          completed: overviewCompleted,
+          featured: overviewFeatured,
         },
       },
     };
@@ -253,13 +271,6 @@ const getEventById = async (eventId) => {
  */
 const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
   try {
-    console.log("[ADMIN EVENT SERVICE] Starting updateEventStatus:", {
-      eventId,
-      newStatus,
-      hasReason: !!reason,
-      adminId,
-    });
-
     if (!mongoose.Types.ObjectId.isValid(eventId)) {
       const error = new Error("Invalid event ID format");
       error.status = 400;
@@ -276,7 +287,6 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
       throw error;
     }
 
-    console.log("[ADMIN EVENT SERVICE] Finding event...");
     const event = await Event.findById(eventId).populate(
       "creator",
       "_id email fullName",
@@ -289,7 +299,6 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
     }
 
     const oldStatus = event.status;
-    console.log("[ADMIN EVENT SERVICE] Event found, oldStatus:", oldStatus);
 
     // Logic kiểm tra status transition
     if (oldStatus === "completed") {
@@ -368,8 +377,6 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
         tt.onChainId = onChainId;
         await tt.save();
 
-        console.log(`[ADMIN EVENT SERVICE] 🎟️ Generated onChainId: ${onChainId} for TicketType: ${tt.name} (${tt._id})`);
-
         const nonce = Math.floor(Math.random() * 1000000000);
 
         const voucherData = {
@@ -399,10 +406,6 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
       // Lưu lại thông tin vào event
       event.vouchers = vouchers;
       event.signatures = signatures;
-      console.log("[ADMIN EVENT SERVICE] Voucher payloads updated:", {
-        vouchers: event.vouchers,
-        signatures: event.signatures,
-      });
     }
 
     if (newStatus === "rejected" && oldStatus !== "pending") {
@@ -429,9 +432,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
       event.cancelReason = reason || "admin_cancelled";
     }
 
-    console.log("[ADMIN EVENT SERVICE] Saving event...");
     await event.save();
-    console.log("[ADMIN EVENT SERVICE] Event saved successfully");
 
     if (event.creator?._id) {
       if (newStatus === "approved") {

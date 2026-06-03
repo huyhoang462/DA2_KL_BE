@@ -59,6 +59,7 @@ const eventSchema = new mongoose.Schema(
         "upcoming",
         "ongoing",
         "completed",
+        "settled",
         "rejected",
         "cancelled",
       ],
