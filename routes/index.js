@@ -36,6 +36,8 @@ const initRoutes = (app) => {
   app.use("/api/payout-methods", payoutMethodRoute);
   app.use("/api/orders", orderRoute);
   app.use("/api/payment", paymentRoute);
+  // Alias for SC docs: keep both /api/webhook and /api/webhooks
+  app.use("/api/webhook", webhookRoutes);
   app.use("/api/webhooks", webhookRoutes);
   app.use("/api/order-items", orderItemRoutes);
   app.use("/api/tickets", ticketRoutes);
