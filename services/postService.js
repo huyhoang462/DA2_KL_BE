@@ -206,6 +206,7 @@ const createPost = async ({ author, data }) => {
     const seen = new Set();
 
     for (const item of normalizedRelatedTickets) {
+      console.log("Validating related ticket item:", item);
       const ticketId = item?.ticket;
       const itemPrice = item?.price;
 
@@ -217,7 +218,7 @@ const createPost = async ({ author, data }) => {
 
       if (typeof itemPrice !== "number" || itemPrice <= 0) {
         const error = new Error(
-          "Each relatedTickets item must have a positive price",
+          `Each relatedTickets item must have a positive price: ${itemPrice}`,
         );
         error.status = 400;
         throw error;
