@@ -68,7 +68,7 @@ const getAllPosts = async ({
       .populate("relatedEvent", "name startDate bannerImageUrl status location")
       .populate({
         path: "relatedTickets.ticket",
-        select: "status ticketType",
+        select: "status owner ticketType",
         populate: {
           path: "ticketType",
           select: "name price show",
