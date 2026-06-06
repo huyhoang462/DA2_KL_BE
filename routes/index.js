@@ -26,6 +26,7 @@ const commentRoutes = require("./comment.routes");
 const contentReportRoutes = require("./contentReport.routes");
 const notificationRoutes = require("./notification.routes");
 const organizerProfileRoutes = require("./organizerProfile.routes");
+const gasFundRoutes = require("./gasFund.routes");
 
 const initRoutes = (app) => {
   app.use("/api/auth", authRoutes);
@@ -58,5 +59,6 @@ const initRoutes = (app) => {
   app.use("/api/reports", contentReportRoutes);
   app.use("/api/notifications", notificationRoutes);
   app.use("/api/organizer-profile", organizerProfileRoutes);
+  app.use("/api/gas", gasFundRoutes);
 };
 module.exports = initRoutes;

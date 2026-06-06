@@ -26,6 +26,7 @@ const handleRelayerCallback = async (req, res) => {
       relayerAddress,
       errorMessage,
       receipt,
+      tokenIds, // <-- Lấy tokenIds từ payload
     } = req.body;
 
     console.log("[RELAYER CALLBACK] Payload summary:", {
@@ -36,6 +37,7 @@ const handleRelayerCallback = async (req, res) => {
       contractAddress,
       blockNumber,
       relayerAddress,
+      tokenIdsCount: tokenIds ? tokenIds.length : 0,
     });
 
     if (!orderId || !status) {
@@ -113,24 +115,50 @@ const handleRelayerCallback = async (req, res) => {
         try {
           await session.startTransaction();
 
-          // Update tickets for this order: set mintStatus = 'minted' and record some on-chain info
-          const ticketUpdate = {
-            $set: {
-              mintStatus: "minted",
-              blockchainNetwork:
-                chainId || (receipt && receipt.chainId) || null,
-              contractAddress: contractAddress || null,
-            },
-          };
+          // Update tickets for this order: set mintStatus = 'minted' and assign tokenIds
+          const ticketsToUpdate = await Ticket.find({
+            order: order._id,
+            mintStatus: { $in: ["unminted", "pending"] },
+          }).session(session);
 
-          const updateResult = await Ticket.updateMany(
-            { order: order._id, mintStatus: { $in: ["unminted", "pending"] } },
-            ticketUpdate,
-            { session },
-          );
+          let modifiedCount = 0;
 
-          const modifiedCount =
-            updateResult.modifiedCount ?? updateResult.nModified ?? 0;
+          if (ticketsToUpdate.length > 0) {
+            if (tokenIds && Array.isArray(tokenIds) && tokenIds.length === ticketsToUpdate.length) {
+              // Assign distinct tokenIds
+              for (let i = 0; i < ticketsToUpdate.length; i++) {
+                const ticket = ticketsToUpdate[i];
+                ticket.mintStatus = "minted";
+                ticket.blockchainNetwork = chainId || (receipt && receipt.chainId) || null;
+                ticket.contractAddress = contractAddress || null;
+                ticket.tokenId = String(tokenIds[i]);
+                await ticket.save({ session });
+                modifiedCount++;
+              }
+              console.log(`[RELAYER CALLBACK] Assigned ${modifiedCount} tokenIds to tickets`);
+            } else {
+              console.warn("[RELAYER CALLBACK] tokenIds missing or length mismatch with tickets", {
+                tokenIdsCount: tokenIds ? tokenIds.length : 0,
+                ticketsCount: ticketsToUpdate.length,
+              });
+              
+              const ticketUpdate = {
+                $set: {
+                  mintStatus: "minted",
+                  blockchainNetwork:
+                    chainId || (receipt && receipt.chainId) || null,
+                  contractAddress: contractAddress || null,
+                },
+              };
+
+              const updateResult = await Ticket.updateMany(
+                { _id: { $in: ticketsToUpdate.map((t) => t._id) } },
+                ticketUpdate,
+                { session },
+              );
+              modifiedCount = updateResult.modifiedCount ?? updateResult.nModified ?? 0;
+            }
+          }
 
           // Also mark order as completed (new enum value)
           // Only change if current status is 'paid' to preserve other flows
@@ -882,7 +910,8 @@ module.exports = {
  */
 async function handleFinalizeOrderWeb3(req, res) {
   try {
-    const { orderId, txHash } = req.body;
+    // FE gửi: { orderId, txHash, tokenIds: [42, 43, 44] }
+    const { orderId, txHash, tokenIds: tokenIdsFromFE } = req.body;
 
     if (!orderId || !txHash) {
       return res
@@ -914,7 +943,7 @@ async function handleFinalizeOrderWeb3(req, res) {
     try {
       await session.startTransaction();
 
-      // 1) Verify on-chain
+      // 1) Verify on-chain — xác nhận txHash hợp lệ, đúng contract, không bị revert
       const rpcUrl = process.env.WEB3_RPC_URL;
       if (!rpcUrl) {
         throw new Error("WEB3_RPC_URL is not configured");
@@ -926,9 +955,8 @@ async function handleFinalizeOrderWeb3(req, res) {
         throw new Error("Transaction receipt not found or not yet mined");
       }
 
-      // Check status
+      // Check on-chain status (1 = success)
       if (Number(receipt.status) !== 1) {
-        // mark failed
         await processFailedPayment(order, `web3_tx_status_${receipt.status}`);
         await session.commitTransaction();
         return res
@@ -949,38 +977,62 @@ async function handleFinalizeOrderWeb3(req, res) {
         );
       }
 
-      // NOTE: Do not enforce strict 'from' equality here. FE may submit txs sent
-      // by a relayer or different signer; we instead rely on Transfer events
-      // to attribute minted tokenIds to buyer. Keep an audit log for tracing.
       console.log(
         "[FINALIZE ORDER WEB3] receipt.from:",
         receipt.from,
-        "order.walletAddress:",
+        "| order.walletAddress:",
         order.walletAddress,
       );
 
-      // Extract Transfer tokenIds
-      const transferTopic = ethers.id("Transfer(address,address,uint256)");
-      const tokenIds = [];
-      for (const log of receipt.logs || []) {
-        if (!log.topics || log.topics.length === 0) continue;
-        if (
-          log.address &&
-          log.address.toLowerCase() === contractAddress &&
-          log.topics[0] === transferTopic
-        ) {
-          // tokenId is topics[3] (indexed)
-          const raw = log.topics[3];
-          try {
-            const id = ethers.toBigInt(raw).toString();
-            tokenIds.push(id);
-          } catch (e) {
-            console.warn("Unable to parse tokenId from log topic:", raw, e);
+      // ── 2) Lấy tokenIds ────────────────────────────────────────────────────
+      // Ưu tiên dùng tokenIds do FE gửi lên (parse từ EventTicketsMinted log).
+      // Nếu FE không gửi, fallback tự extract từ Transfer events on-chain.
+      let tokenIds;
+
+      if (
+        Array.isArray(tokenIdsFromFE) &&
+        tokenIdsFromFE.length > 0
+      ) {
+        // Normalize: đảm bảo mọi id đều là string
+        tokenIds = tokenIdsFromFE.map((id) => String(id));
+        console.log(
+          `[FINALIZE ORDER WEB3] Dùng ${tokenIds.length} tokenIds từ FE:`,
+          tokenIds,
+        );
+      } else {
+        // Fallback: tự extract từ Transfer events on-chain
+        console.warn(
+          "[FINALIZE ORDER WEB3] tokenIds không được FE cung cấp — fallback extract từ Transfer events",
+        );
+        const transferTopic = ethers.id("Transfer(address,address,uint256)");
+        tokenIds = [];
+        for (const log of receipt.logs || []) {
+          if (!log.topics || log.topics.length < 4) continue;
+          if (
+            log.address &&
+            log.address.toLowerCase() === contractAddress &&
+            log.topics[0] === transferTopic
+          ) {
+            // ERC-721 Transfer: topics[3] = tokenId (indexed)
+            const raw = log.topics[3];
+            try {
+              tokenIds.push(ethers.toBigInt(raw).toString());
+            } catch (e) {
+              console.warn(
+                "[FINALIZE ORDER WEB3] Không parse được tokenId từ topic:",
+                raw,
+                e,
+              );
+            }
           }
         }
+        console.log(
+          `[FINALIZE ORDER WEB3] Fallback extract được ${tokenIds.length} tokenIds:`,
+          tokenIds,
+        );
       }
 
-      // 2) Verify counts vs order items
+      // 3) Verify số lượng tokenIds khớp với tổng số vé trong order
       const orderItems = await OrderItem.find({ order: order._id }).session(
         session,
       );
@@ -992,7 +1044,7 @@ async function handleFinalizeOrderWeb3(req, res) {
         );
       }
 
-      // 3) Update order status & payment info
+      // 4) Update order status & payment info
       order.status = "paid";
       order.txHash = txHash;
       order.paymentInfo = {
@@ -1006,7 +1058,7 @@ async function handleFinalizeOrderWeb3(req, res) {
 
       await order.save({ session });
 
-      // 4) Create tickets (if not exist) — reuse createTicketsForOrder
+      // 5) Tạo tickets nếu chưa có — reuse createTicketsForOrder
       const existingTickets = await Ticket.find({ order: order._id }).session(
         session,
       );
@@ -1020,15 +1072,17 @@ async function handleFinalizeOrderWeb3(req, res) {
       }
 
       if (createdTickets.length !== tokenIds.length) {
-        throw new Error("Created tickets count mismatch");
+        throw new Error(
+          `Tickets count (${createdTickets.length}) does not match tokenIds count (${tokenIds.length})`,
+        );
       }
 
-      // 5) Assign tokenIds to tickets and mark minted
+      // 6) Gán tokenId vào từng ticket & đánh dấu minted
       for (let i = 0; i < createdTickets.length; i++) {
-        const t = createdTickets[i];
+        const ticket = createdTickets[i];
         const tokenId = tokenIds[i];
         await Ticket.findByIdAndUpdate(
-          t._id,
+          ticket._id,
           {
             tokenId: tokenId.toString(),
             mintStatus: "minted",
@@ -1038,7 +1092,11 @@ async function handleFinalizeOrderWeb3(req, res) {
         );
       }
 
-      // 6) Create transaction record
+      console.log(
+        `[FINALIZE ORDER WEB3] ✅ Gán tokenIds thành công cho ${createdTickets.length} ticket(s) của order ${order._id}`,
+      );
+
+      // 7) Tạo transaction record
       await transactionService.createTransaction(
         {
           orderId: order._id,
@@ -1052,7 +1110,7 @@ async function handleFinalizeOrderWeb3(req, res) {
 
       await session.commitTransaction();
 
-      // Notification (best-effort, outside tx)
+      // Notification (best-effort, ngoài transaction)
       await createNotificationSafe({
         recipientId: order.buyer,
         type: "payment_success",
@@ -1070,6 +1128,10 @@ async function handleFinalizeOrderWeb3(req, res) {
       return res.status(200).json({
         success: true,
         message: "Order verified and updated successfully",
+        data: {
+          tokenIds,
+          ticketsUpdated: createdTickets.length,
+        },
       });
     } catch (err) {
       if (session.inTransaction()) await session.abortTransaction();

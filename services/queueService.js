@@ -175,9 +175,56 @@ const addRelayerBuyTicketJob = async (payload) => {
   }
 };
 
+// ------------------------------------------------------
+// Queue GAS FUND (bơm gas cho ví người dùng)
+// ------------------------------------------------------
+const gasFundQueueName = process.env.GAS_FUND_QUEUE_NAME || "gas-fund-queue";
+
+const gasFundQueue = new Queue(gasFundQueueName, {
+  connection,
+  defaultJobOptions: {
+    removeOnComplete: true,
+    removeOnFail: 5000,
+    attempts: 3,
+  },
+});
+
+/**
+ * Đẩy job bơm gas vào ví người dùng
+ * @param {Object} payload - {walletAddress, jobId}
+ * @returns {Promise<string>} - jobId
+ */
+const addGasFundJob = async (payload) => {
+  try {
+    if (!payload || !payload.walletAddress) {
+      throw new Error("Missing payload.walletAddress for gas fund job");
+    }
+
+    const jobId = payload.jobId || `gas-${payload.walletAddress}-${Date.now()}`;
+
+    await gasFundQueue.add("gas-fund-job", payload, {
+      jobId: jobId,
+    });
+
+    const counts = await gasFundQueue.getJobCounts();
+    console.log(
+      `🚀 [Gas Fund Queue] Queued gas-fund job for wallet ${payload.walletAddress}`,
+    );
+    console.log(
+      `📥 [Gas Fund Queue] waiting=${counts.waiting}, active=${counts.active}, delayed=${counts.delayed || 0}, completed=${counts.completed || 0}`,
+    );
+
+    return jobId;
+  } catch (error) {
+    console.error("❌ [Gas Fund Queue] Failed to enqueue gas-fund job:", error);
+    throw error;
+  }
+};
+
 module.exports = {
   addMintJob,
   addCheckInJob,
   addExpireJob,
   addRelayerBuyTicketJob,
+  addGasFundJob,
 };

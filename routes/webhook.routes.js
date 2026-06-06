@@ -8,6 +8,7 @@ const {
   handleMarketplaceTicketSold,
 } = require("../controllers/webhook.controller");
 const paymentController = require("../controllers/payment.controller");
+const gasFundController = require("../controllers/gasFund.controller");
 
 // Webhook từ hệ thống mint NFT (không cần auth, nhưng nên bảo vệ bằng secret ở môi trường production)
 router.post("/mint-success", handleMintSuccessWebhook);
@@ -25,5 +26,8 @@ router.post("/marketplace/sold", handleMarketplaceTicketSold);
 
 // Callback từ worker sau khi relayer mua vé on-chain xong
 router.post("/relayer-callback", paymentController.handleRelayerCallback);
+
+// Callback từ worker sau khi bơm gas xong
+router.post("/gas-callback", gasFundController.handleGasFundCallback);
 
 module.exports = router;

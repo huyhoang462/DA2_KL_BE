@@ -261,6 +261,9 @@ const getPendingTicketsByUserId = async (userId) => {
         checkinAt: 1,
         lastCheckOutAt: 1,
         mintStatus: 1,
+        blockchainNetwork: 1,
+        contractAddress: 1,
+        tokenId: 1,
         createdAt: 1,
         updatedAt: 1,
         ticketType: {
@@ -351,6 +354,9 @@ const getPendingTicketsByUserId = async (userId) => {
       checkinAt: ticket.checkinAt,
       lastCheckOutAt: ticket.lastCheckOutAt,
       mintStatus: ticket.mintStatus,
+      blockchainNetwork: ticket.blockchainNetwork,
+      contractAddress: ticket.contractAddress,
+      tokenId: ticket.tokenId,
       createdAt: ticket.createdAt,
       updatedAt: ticket.updatedAt,
     });
