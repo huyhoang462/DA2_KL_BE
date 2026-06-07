@@ -26,7 +26,7 @@ const ticketSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "checkedIn", "out",'selling', "expired", "cancelled"],
+      enum: ["pending", "checkedIn", "out", "selling", "expired", "cancelled"],
       default: "pending",
       required: true,
     },
@@ -47,7 +47,7 @@ const ticketSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 ticketSchema.set("toJSON", {

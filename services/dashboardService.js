@@ -33,6 +33,7 @@ const getDashboardOverview = async () => {
       ongoingEvents,
       completedEvents,
       rejectedEvents,
+      settledEvents,
       totalRevenue,
       todayRevenue,
       weekRevenue,
@@ -53,6 +54,7 @@ const getDashboardOverview = async () => {
       Event.countDocuments({ status: "ongoing" }),
       Event.countDocuments({ status: "completed" }),
       Event.countDocuments({ status: "rejected" }),
+      Event.countDocuments({ status: "settled" }),
 
       // Doanh thu
       Transaction.aggregate([
@@ -216,6 +218,16 @@ const getDashboardOverview = async () => {
         priority: "high",
         message: `Bạn có ${pendingEvents} sự kiện đang chờ duyệt`,
         action: "Xem sự kiện chờ duyệt",
+        link: "/admin/events",
+      });
+    }
+
+    if (completedEvents > 0) {
+      alerts.push({
+        type: "warning",
+        priority: "high",
+        message: `Bạn có ${completedEvents} sự kiện chờ tất toán`,
+        action: "Xem sự kiện chờ tất toán",
         link: "/admin/events",
       });
     }
