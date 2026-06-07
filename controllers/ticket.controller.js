@@ -8,6 +8,7 @@ const {
   getTicketsByShowId,
   getTicketTypesStatsForOrganizer,
   getTicketsListForOrganizer,
+  cancelTicketListing,
 } = require("../services/ticketService");
 
 /**
@@ -211,6 +212,33 @@ const handleGetOrganizerTickets = async (req, res, next) => {
   }
 };
 
+/**
+ * Hủy bán vé: chuyển status ticket từ "selling" về "pending"
+ * PATCH /api/tickets/:ticketId/cancel-listing
+ */
+const handleCancelTicketListing = async (req, res, next) => {
+  try {
+    const { ticketId } = req.params;
+    const userId = req.user.id;
+
+    console.log("[CANCEL LISTING] Request:", { ticketId, userId });
+
+    const result = await cancelTicketListing(ticketId, userId);
+
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      data: {
+        ticketId: result.ticketId,
+        status: result.status,
+      },
+    });
+  } catch (error) {
+    console.error("[CANCEL LISTING] Error:", error);
+    next(error);
+  }
+};
+
 module.exports = {
   handleGetMyTickets,
   handleGetMyPendingTickets,
@@ -221,5 +249,6 @@ module.exports = {
   handleGetTicketsByShow,
   handleGetOrganizerStats,
   handleGetOrganizerTickets,
+  handleCancelTicketListing,
 };
 

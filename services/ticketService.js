@@ -128,6 +128,9 @@ const getTicketsByUserId = async (userId) => {
       checkinAt: ticket.checkinAt,
       lastCheckOutAt: ticket.lastCheckOutAt,
       mintStatus: ticket.mintStatus,
+      blockchainNetwork: ticket.blockchainNetwork,
+      contractAddress: ticket.contractAddress,
+      tokenId: ticket.tokenId,
       createdAt: ticket.createdAt,
       updatedAt: ticket.updatedAt,
 
@@ -1030,6 +1033,53 @@ const getTicketsListForOrganizer = async (showId, filters = {}) => {
   };
 };
 
+/**
+ * Hủy bán vé: chuyển status từ "selling" về "pending"
+ * Chỉ owner của vé mới có thể thực hiện
+ * @param {String} ticketId - ID của ticket
+ * @param {String} userId   - ID của người dùng đang thực hiện
+ */
+const cancelTicketListing = async (ticketId, userId) => {
+  if (!mongoose.Types.ObjectId.isValid(ticketId)) {
+    const error = new Error("Invalid ticket ID format");
+    error.status = 400;
+    throw error;
+  }
+
+  const ticket = await Ticket.findById(ticketId);
+
+  if (!ticket) {
+    const error = new Error("Ticket not found");
+    error.status = 404;
+    throw error;
+  }
+
+  if (ticket.owner.toString() !== userId.toString()) {
+    const error = new Error(
+      "Forbidden: You do not own this ticket"
+    );
+    error.status = 403;
+    throw error;
+  }
+
+  if (ticket.status !== "selling") {
+    const error = new Error(
+      `Ticket is not currently listed for sale (current status: ${ticket.status})`
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  ticket.status = "pending";
+  await ticket.save();
+
+  return {
+    message: "Ticket listing cancelled successfully",
+    ticketId: ticket._id.toString(),
+    status: ticket.status,
+  };
+};
+
 module.exports = {
   createTicketsForOrder,
   getTicketsByUserId,
@@ -1041,4 +1091,5 @@ module.exports = {
   getTicketsByShowId,
   getTicketTypesStatsForOrganizer,
   getTicketsListForOrganizer,
+  cancelTicketListing,
 };

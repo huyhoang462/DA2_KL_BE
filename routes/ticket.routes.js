@@ -46,6 +46,13 @@ router.get(
   ticketController.handleGetTicketsByOrderId
 );
 
+// Hủy bán vé: selling → pending (chỉ owner của vé)
+router.patch(
+  "/:ticketId/cancel-listing",
+  userExtractor,
+  ticketController.handleCancelTicketListing
+);
+
 // Lấy một ticket theo ID
 router.get("/:ticketId", userExtractor, ticketController.handleGetTicketById);
 
