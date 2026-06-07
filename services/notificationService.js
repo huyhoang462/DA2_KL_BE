@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 const Notification = require("../models/notification");
-
+const { getIo, getReceiverSocketId } = require("../utils/socket");
 const MAX_TITLE_LENGTH = 150;
 const MAX_MESSAGE_LENGTH = 1000;
 
@@ -82,6 +82,17 @@ const createNotification = async ({
     channels,
     createdBy,
   });
+  console.log("ID NGƯỜI NHẬN:", recipientId.toString());
+
+  const receiverSocketId = getReceiverSocketId(recipientId.toString());
+
+  if (receiverSocketId) {
+    const io = getIo();
+    io.to(receiverSocketId).emit("receiveNotification", notification);
+    console.log(`[SOCKET] Đã bắn realtime thành công tới: ${receiverSocketId}`);
+  } else {
+    console.log(`[SOCKET] Người nhận offline, không bắn được socket.`);
+  }
 
   return mapNotification(notification);
 };

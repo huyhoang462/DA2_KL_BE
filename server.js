@@ -12,7 +12,13 @@ const {
   initializeShowStatuses,
 } = require("./services/showStatusService"); // ✅ IMPORT SHOW STATUS
 const helmet = require("helmet");
+const { initSocket } = require("./utils/socket");
+const http = require("http");
+
 const app = express();
+
+const server = http.createServer(app);
+initSocket(server);
 
 mongoose
   .connect(process.env.MONGODB_URI)
@@ -131,8 +137,8 @@ initRoutes(app);
 // });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Serrver running on port ${PORT}`);
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
 
 app.use(errorHandler);
