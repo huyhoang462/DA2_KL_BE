@@ -59,4 +59,11 @@ router.delete(
   eventController.handleDeleteEvent,
 );
 
+router.post(
+  "/:id/settle",
+  userExtractor,
+  checkEventOwnership,
+  eventController.handleSettleEvent,
+);
+
 module.exports = router;

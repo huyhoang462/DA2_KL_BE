@@ -7,6 +7,7 @@ const {
   handleSetFeaturedEvent,
   handleDeleteEvent,
   handleGetEventStatistics,
+  handleSettleEvent,
 } = require("../controllers/adminEvent.controller");
 const { userExtractor } = require("../middlewares/authentication");
 const { requireAdmin } = require("../middlewares/authorization");
@@ -66,6 +67,13 @@ router.get("/", userExtractor, requireAdmin, handleGetAllEvents);
 router.get("/:id", userExtractor, requireAdmin, handleGetEventById);
 
 /**
+ * @route   POST /api/admin/events/:id/settle
+ * @desc    Tất toán doanh thu sự kiện
+ * @access  Admin only
+ */
+router.post("/:id/settle", userExtractor, requireAdmin, handleSettleEvent);
+
+/**
  * @route   PATCH /api/admin/events/:id/status
  * @desc    DUYỆT/TỪ CHỐI/HUỶ sự kiện (Event Approval)
  * @body    status (string) - Status mới:
@@ -107,3 +115,4 @@ router.patch(
 router.delete("/:id", userExtractor, requireAdmin, handleDeleteEvent);
 
 module.exports = router;
+

@@ -112,6 +112,15 @@ const eventSchema = new mongoose.Schema(
       type: Array,
       default: [],
     },
+    // --- SETTLEMENT INFO ---
+    settlementInfo: {
+      txHash: { type: String },
+      settledAt: { type: Date },
+      organizerAmount: { type: Number },
+      adminAmount: { type: Number },
+      organizerAddress: { type: String },
+      adminTreasuryAddress: { type: String },
+    },
   },
   {
     timestamps: true,

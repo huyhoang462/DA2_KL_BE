@@ -1,4 +1,4 @@
-const {
+ const {
   getAllEvents,
   createEvent,
   getEventById,
@@ -200,21 +200,50 @@ const handleUpdateMintingStatus = async (req, res, next) => {
     event.status = "minting";
     await event.save();
 
-    // 3. Quăng Job vào BullMQ cho Worker đi kiểm tra (Giả sử bạn đã setup queue)
-    // const { verifyTxQueue } = require('../queues/bullmq.setup');
-    // await verifyTxQueue.add('verify-event-mint', {
-    //     eventId: event._id.toString(),
-    //     txHash: txHash
-    // }, {
-    //     attempts: 5,
-    //     backoff: { type: 'exponential', delay: 3000 }
-    // });
-
     return res.status(200).json({
       message: "Transaction received. Worker is verifying...",
       status: "minting",
     });
   } catch (error) {
+    next(error);
+  }
+};
+
+const handleSettleEvent = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const {
+      txHash,
+      organizerAmount,
+      adminAmount,
+      organizerAddress,
+      adminTreasuryAddress,
+    } = req.body;
+    const organizerId = req.user._id;
+
+    if (!txHash || organizerAmount == null || adminAmount == null) {
+      const error = new Error("Missing settlement data");
+      error.status = 400;
+      throw error;
+    }
+
+    const settlementData = {
+      txHash,
+      organizerAmount,
+      adminAmount,
+      organizerAddress,
+      adminTreasuryAddress,
+    };
+
+    // Use the adminEventService logic or move it. For now, require it from adminEventService
+    const result = await require("../services/adminEventService").settleEvent(
+      id,
+      settlementData,
+      organizerId,
+    );
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("[EVENT] Error settling event:", error);
     next(error);
   }
 };
@@ -234,4 +263,5 @@ module.exports = {
   handleGetDashboardOverview,
   handleGetRevenueAnalytics,
   handleUpdateMintingStatus,
+  handleSettleEvent,
 };

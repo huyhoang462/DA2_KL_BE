@@ -892,6 +892,75 @@ const getEventStatistics = async () => {
   }
 };
 
+/**
+ * Tất toán event
+ */
+const settleEvent = async (eventId, settlementData, adminId) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(eventId)) {
+      const error = new Error("Invalid event ID format");
+      error.status = 400;
+      throw error;
+    }
+
+    const event = await Event.findById(eventId).populate(
+      "creator",
+      "_id email fullName",
+    );
+
+    if (!event) {
+      const error = new Error("Event not found");
+      error.status = 404;
+      throw error;
+    }
+
+    if (event.status !== "completed") {
+      const error = new Error("Only completed events can be settled");
+      error.status = 400;
+      throw error;
+    }
+
+    event.status = "settled";
+    event.settlementInfo = {
+      txHash: settlementData.txHash,
+      settledAt: new Date(),
+      organizerAmount: settlementData.organizerAmount,
+      adminAmount: settlementData.adminAmount,
+      organizerAddress: settlementData.organizerAddress,
+      adminTreasuryAddress: settlementData.adminTreasuryAddress,
+    };
+
+    await event.save();
+
+    await createNotificationSafe({
+      recipientId: event.creator._id,
+      type: "event_settled",
+      title: "Sự kiện đã được tất toán",
+      message: `Sự kiện "${event.name}" đã được tất toán. Doanh thu ${settlementData.organizerAmount} USDT đã được chuyển vào ví của bạn.`,
+      priority: "high",
+      metadata: {
+        eventId: event._id.toString(),
+        txHash: settlementData.txHash,
+      },
+      channels: ["in_app"],
+      createdBy: adminId,
+    });
+
+    return {
+      success: true,
+      message: "Event settled successfully",
+      data: {
+        eventId: event._id.toString(),
+        status: event.status,
+        settlementInfo: event.settlementInfo,
+      },
+    };
+  } catch (error) {
+    console.error("[ADMIN EVENT] Error settling event:", error);
+    throw error;
+  }
+};
+
 module.exports = {
   getAllEvents,
   getEventById,
@@ -899,4 +968,5 @@ module.exports = {
   setFeaturedEvent,
   deleteEvent,
   getEventStatistics,
+  settleEvent,
 };

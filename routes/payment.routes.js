@@ -20,4 +20,18 @@ router.post(
   paymentController.handleFinalizeOrderWeb3,
 );
 
+// Tạo order khi mua lại vé trên marketplace
+router.post(
+  "/create-resale-order",
+  userExtractor,
+  paymentController.handleCreateResaleOrder,
+);
+
+// Finalize đơn mua lại vé sau khi giao dịch on-chain thành công
+router.post(
+  "/finalize-resale-order",
+  userExtractor,
+  paymentController.handleFinalizeResaleOrder,
+);
+
 module.exports = router;

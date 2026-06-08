@@ -57,6 +57,13 @@ const postSchema = new mongoose.Schema(
         },
       },
     ],
+
+    // Địa chỉ ví crypto của người bán (dùng cho marketplace_listing)
+    walletAddress: {
+      type: String,
+      trim: true,
+    },
+
     // Phân loại
     postType: {
       type: String,
@@ -115,7 +122,9 @@ postSchema.index({ "relatedTickets.ticket": 1 }); // Marketplace listing tickets
 // Transform khi trả về JSON
 postSchema.set("toJSON", {
   transform: (document, returnedObject) => {
-    returnedObject.id = returnedObject._id.toString();
+    if (returnedObject._id) {
+      returnedObject.id = returnedObject._id.toString();
+    }
     delete returnedObject._id;
     delete returnedObject.__v;
   },

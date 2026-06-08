@@ -147,6 +147,48 @@ const handleGetEventStatistics = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/admin/events/:id/settle
+ * Tất toán event
+ */
+const handleSettleEvent = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const {
+      txHash,
+      organizerAmount,
+      adminAmount,
+      organizerAddress,
+      adminTreasuryAddress,
+    } = req.body;
+    const adminId = req.user._id;
+
+    if (!txHash || organizerAmount == null || adminAmount == null) {
+      const error = new Error("Missing settlement data");
+      error.status = 400;
+      throw error;
+    }
+
+    const settlementData = {
+      txHash,
+      organizerAmount,
+      adminAmount,
+      organizerAddress,
+      adminTreasuryAddress,
+    };
+
+    const result = await require("../services/adminEventService").settleEvent(
+      id,
+      settlementData,
+      adminId,
+    );
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("[ADMIN EVENT] Error settling event:", error);
+    next(error);
+  }
+};
+
 module.exports = {
   handleGetAllEvents,
   handleGetEventById,
@@ -154,4 +196,5 @@ module.exports = {
   handleSetFeaturedEvent,
   handleDeleteEvent,
   handleGetEventStatistics,
+  handleSettleEvent,
 };

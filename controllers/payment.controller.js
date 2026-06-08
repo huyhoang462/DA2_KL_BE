@@ -900,7 +900,338 @@ module.exports = {
   getFailureReason, // ⭐ Export để dùng ở nơi khác
   handleFinalizeOrder,
   handleFinalizeOrderWeb3,
+  handleCreateResaleOrder,
+  handleFinalizeResaleOrder,
 };
+
+/**
+ * Tạo order khi người dùng muốn mua lại vé trên marketplace (hỗ trợ nhiều vé)
+ * POST /api/payments/create-resale-order
+ * Body: { walletAddress, tickets: [{ ticketId, resalePrice }, ...] }
+ */
+async function handleCreateResaleOrder(req, res) {
+  try {
+    const { walletAddress, tickets } = req.body;
+    const buyerId = req.user.id;
+
+    // --- Validate input ---
+    if (!walletAddress || !Array.isArray(tickets) || tickets.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: walletAddress, tickets (non-empty array)",
+      });
+    }
+
+    // Validate từng item trong mảng
+    for (let i = 0; i < tickets.length; i++) {
+      const item = tickets[i];
+      if (!item.ticketId || !mongoose.Types.ObjectId.isValid(item.ticketId)) {
+        return res.status(400).json({
+          success: false,
+          message: `tickets[${i}].ticketId is invalid`,
+        });
+      }
+      const parsedPrice = Number(item.resalePrice);
+      if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: `tickets[${i}].resalePrice must be a positive number`,
+        });
+      }
+    }
+
+    // Kiểm tra trùng ticketId
+    const ticketIdSet = new Set(tickets.map((t) => t.ticketId));
+    if (ticketIdSet.size !== tickets.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Duplicate ticketId in tickets array",
+      });
+    }
+
+    // --- Fetch & validate tất cả tickets ---
+    const ticketDocs = await Ticket.find({
+      _id: { $in: tickets.map((t) => t.ticketId) },
+    }).populate("ticketType");
+
+    if (ticketDocs.length !== tickets.length) {
+      return res.status(404).json({
+        success: false,
+        message: "One or more tickets not found",
+      });
+    }
+
+    for (const doc of ticketDocs) {
+      if (doc.status !== "selling") {
+        return res.status(400).json({
+          success: false,
+          message: `Ticket ${doc._id} is not available for purchase (current status: ${doc.status})`,
+        });
+      }
+      if (doc.owner.toString() === buyerId) {
+        return res.status(400).json({
+          success: false,
+          message: `You cannot buy your own ticket (ticketId: ${doc._id})`,
+        });
+      }
+    }
+
+    // Tính tổng tiền
+    const totalAmount = tickets.reduce(
+      (sum, t) => sum + Number(t.resalePrice),
+      0,
+    );
+
+    // Map ticketId -> resalePrice để tạo OrderItem
+    const priceMap = Object.fromEntries(
+      tickets.map((t) => [t.ticketId, Number(t.resalePrice)]),
+    );
+
+    const EXCHANGE_RATE_DEFAULT = 26.3;
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 phút
+
+    const session = await mongoose.startSession();
+    let newOrder;
+
+    try {
+      await session.startTransaction();
+
+      // Tạo Order
+      newOrder = new Order({
+        buyer: buyerId,
+        totalAmount,
+        exchangeRateVndPerUsdt: EXCHANGE_RATE_DEFAULT,
+        paymentMethod: "web3",
+        status: "pending",
+        walletAddress: walletAddress.trim(),
+        expiresAt,
+      });
+      await newOrder.save({ session });
+
+      // Tạo OrderItem cho từng vé
+      const orderItemDocs = ticketDocs.map((doc) => ({
+        order: newOrder._id,
+        ticketType: doc.ticketType._id,
+        quantity: 1,
+        priceAtPurchase: priceMap[doc._id.toString()],
+      }));
+      await OrderItem.insertMany(orderItemDocs, { session });
+
+      await session.commitTransaction();
+    } catch (err) {
+      if (session.inTransaction()) await session.abortTransaction();
+      throw err;
+    } finally {
+      await session.endSession();
+    }
+
+    console.log(
+      `[CREATE RESALE ORDER] ✅ Order ${newOrder._id} created for ${tickets.length} ticket(s) by buyer ${buyerId}`,
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: "Resale order created successfully",
+      data: {
+        orderId: newOrder._id.toString(),
+        orderCode: newOrder.orderCode,
+        totalAmount: newOrder.totalAmount,
+        expiresAt: newOrder.expiresAt,
+        ticketCount: tickets.length,
+        ticketIds: tickets.map((t) => t.ticketId),
+      },
+    });
+  } catch (error) {
+    console.error("[CREATE RESALE ORDER] Error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * Finalize đơn mua lại vé sau khi giao dịch on-chain thành công (hỗ trợ nhiều vé)
+ * POST /api/payments/finalize-resale-order
+ * Body: { orderId, txHash, ticketIds: [...] }
+ */
+async function handleFinalizeResaleOrder(req, res) {
+  try {
+    const { orderId, txHash, ticketIds } = req.body;
+    const buyerId = req.user.id;
+
+    if (!orderId || !txHash || !Array.isArray(ticketIds) || ticketIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: orderId, txHash, ticketIds (non-empty array)",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ success: false, message: "Invalid orderId" });
+    }
+
+    for (let i = 0; i < ticketIds.length; i++) {
+      if (!mongoose.Types.ObjectId.isValid(ticketIds[i])) {
+        return res.status(400).json({
+          success: false,
+          message: `ticketIds[${i}] is invalid`,
+        });
+      }
+    }
+
+    // --- Fetch order ---
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    if (order.buyer.toString() !== buyerId) {
+      return res.status(403).json({ success: false, message: "Unauthorized" });
+    }
+
+    // Idempotency
+    if (order.status === "paid" && order.txHash === txHash) {
+      return res.status(200).json({ success: true, message: "Order already processed" });
+    }
+
+    if (order.status !== "pending") {
+      return res.status(400).json({
+        success: false,
+        message: `Order is not in pending status (current: ${order.status})`,
+      });
+    }
+
+    // --- Fetch & validate tất cả tickets ---
+    const ticketDocs = await Ticket.find({ _id: { $in: ticketIds } });
+    if (ticketDocs.length !== ticketIds.length) {
+      return res.status(404).json({
+        success: false,
+        message: "One or more tickets not found",
+      });
+    }
+
+    const notSelling = ticketDocs.filter((t) => t.status !== "selling");
+    if (notSelling.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Some tickets are not in selling status: ${notSelling.map((t) => t._id).join(", ")}`,
+      });
+    }
+
+    // --- Verify on-chain ---
+    const rpcUrl = process.env.WEB3_RPC_URL;
+    if (!rpcUrl) throw new Error("WEB3_RPC_URL is not configured");
+
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const receipt = await provider.getTransactionReceipt(txHash);
+    if (!receipt) {
+      return res.status(400).json({
+        success: false,
+        message: "Transaction receipt not found or not yet mined",
+      });
+    }
+
+    if (Number(receipt.status) !== 1) {
+      return res.status(400).json({
+        success: false,
+        message: "On-chain transaction failed (receipt.status !== 1)",
+      });
+    }
+
+    const contractAddress = (
+      process.env.SMART_CONTRACT_MARKETPLACE_ADDRESS ||
+      process.env.SMART_CONTRACT_ADDRESS ||
+      ""
+    ).toLowerCase();
+    if (!contractAddress) {
+      throw new Error("SMART_CONTRACT_MARKETPLACE_ADDRESS not configured");
+    }
+
+    if (!receipt.to || receipt.to.toLowerCase() !== contractAddress) {
+      return res.status(400).json({
+        success: false,
+        message: "Transaction does not target the expected contract address",
+      });
+    }
+
+    // --- MongoDB transaction ---
+    const session = await mongoose.startSession();
+    try {
+      await session.startTransaction();
+
+      // 1. Cập nhật order: status = paid
+      order.status = "paid";
+      order.txHash = txHash;
+      order.paymentInfo = {
+        ...(order.paymentInfo || {}),
+        method: "web3",
+        txHash,
+        contractAddress: receipt.to,
+        blockNumber: receipt.blockNumber,
+        verifiedAt: new Date(),
+      };
+      await order.save({ session });
+
+      // 2. Chuyển sở hữu tất cả vé: đổi owner, đưa status về pending
+      await Ticket.updateMany(
+        { _id: { $in: ticketIds }, status: "selling" },
+        { $set: { owner: order.buyer, status: "pending" } },
+        { session },
+      );
+
+      // 3. Tạo transaction record
+      await transactionService.createTransaction(
+        {
+          orderId: order._id,
+          amount: order.totalAmount,
+          paymentMethod: "web3",
+          transactionCode: txHash,
+          status: "success",
+        },
+        session,
+      );
+
+      await session.commitTransaction();
+
+      console.log(
+        `[FINALIZE RESALE ORDER] ✅ Order ${order._id} finalized. ${ticketIds.length} ticket(s) transferred to buyer ${order.buyer}`,
+      );
+    } catch (err) {
+      if (session.inTransaction()) await session.abortTransaction();
+      throw err;
+    } finally {
+      await session.endSession();
+    }
+
+    // Notification (best-effort)
+    await createNotificationSafe({
+      recipientId: order.buyer,
+      type: "payment_success",
+      title: "Mua vé thành công",
+      message: `Bạn đã mua thành công ${ticketIds.length} vé trên sàn giao dịch. Mã đơn: ${order.orderCode || order._id}.`,
+      priority: "high",
+      metadata: {
+        orderId: order._id.toString(),
+        txHash,
+        ticketIds,
+      },
+      channels: ["in_app"],
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Resale order finalized successfully",
+      data: {
+        orderId: order._id.toString(),
+        ticketIds,
+        ticketCount: ticketIds.length,
+        newOwner: order.buyer.toString(),
+        txHash,
+      },
+    });
+  } catch (error) {
+    console.error("[FINALIZE RESALE ORDER] Error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
 
 /**
  * Handle finalize order for Web3 flow

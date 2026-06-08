@@ -63,7 +63,7 @@ const getAllPosts = async ({
 
   const [posts, totalItems] = await Promise.all([
     Post.find(query)
-      .select("-relatedTickets._id") // Không trả về _id và __v của subdocument relatedTickets
+      .select("-relatedTickets._id") // Không trả về _id của subdocument relatedTickets (walletAddress tự động được trả về)
       .populate("author", "fullName email role")
       .populate("relatedEvent", "name startDate bannerImageUrl status location")
       .populate({
@@ -143,7 +143,14 @@ const createPost = async ({ author, data }) => {
     throw error;
   }
 
-  const { content, images, relatedEvent, relatedTickets, postType } = data;
+  const {
+    content,
+    images,
+    walletAddress,
+    relatedEvent,
+    relatedTickets,
+    postType,
+  } = data;
 
   if (!content || typeof content !== "string" || !content.trim()) {
     const error = new Error("content is required");
@@ -270,6 +277,7 @@ const createPost = async ({ author, data }) => {
       authorType: author.role === "organizer" ? "organizer" : "user",
       content: trimmedContent,
       images: normalizedImages,
+      walletAddress: walletAddress ? walletAddress.trim() : undefined,
       relatedEvent: relatedEvent || undefined,
       relatedTickets:
         normalizedRelatedTickets.length > 0

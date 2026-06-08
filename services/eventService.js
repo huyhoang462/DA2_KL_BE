@@ -465,6 +465,20 @@ const getEventById = async (eventId) => {
   event.id = event._id.toString();
   delete event._id;
 
+  // Find the first onChainId
+  event.onChainEventId = null;
+  if (event.shows && event.shows.length > 0) {
+    for (const show of event.shows) {
+      if (show.tickets && show.tickets.length > 0) {
+        const ticketWithId = show.tickets.find((t) => t.onChainId != null);
+        if (ticketWithId) {
+          event.onChainEventId = ticketWithId.onChainId;
+          break;
+        }
+      }
+    }
+  }
+
   return event;
 };
 
@@ -1568,6 +1582,11 @@ const getDashboardOverview = async (eventId) => {
       };
     });
 
+    const onChainEventId =
+      ticketTypes.length > 0 && ticketTypes.find((t) => t.onChainId != null)
+        ? ticketTypes.find((t) => t.onChainId != null).onChainId
+        : null;
+
     return {
       success: true,
       eventInfo: {
@@ -1576,6 +1595,8 @@ const getDashboardOverview = async (eventId) => {
         status: event.status,
         startDate: event.startDate,
         endDate: event.endDate,
+        onChainEventId: onChainEventId,
+        settlementInfo: event.settlementInfo,
       },
       metrics: {
         totalRevenue,
