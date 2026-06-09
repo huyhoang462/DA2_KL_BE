@@ -587,8 +587,8 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
     await createNotificationSafe({
       recipientId: order.buyer,
       type: "payment_success",
-      title: "Thanh toan thanh cong",
-      message: `Don hang ${order.orderCode || order._id} da thanh toan thanh cong.`,
+      title: "Thanh toán thành công",
+      message: `Đơn hàng ${order.orderCode || order._id} đã được thanh toán thành công.`,
       priority: "high",
       metadata: {
         orderId: order._id.toString(),
@@ -672,8 +672,8 @@ const processFailedPayment = async (order, responseCode = null) => {
     await createNotificationSafe({
       recipientId: order.buyer,
       type: "payment_failed",
-      title: "Thanh toan that bai",
-      message: `Don hang ${order.orderCode || order._id} thanh toan that bai.`,
+      title: "Thanh toán thất bại",
+      message: `Đơn hàng ${order.orderCode || order._id} thanh toán thất bại.`,
       priority: "high",
       metadata: {
         orderId: order._id.toString(),
@@ -758,8 +758,8 @@ const processCancelledPayment = async (order) => {
     await createNotificationSafe({
       recipientId: order.buyer,
       type: "payment_cancelled",
-      title: "Thanh toan da huy",
-      message: `Ban da huy thanh toan cho don hang ${order.orderCode || order._id}.`,
+      title: "Thanh toán đã hủy",
+      message: `Bạn đã hủy thanh toán đơn hàng ${order.orderCode || order._id}.`,
       priority: "medium",
       metadata: {
         orderId: order._id.toString(),

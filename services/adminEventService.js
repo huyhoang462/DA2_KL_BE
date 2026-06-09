@@ -713,8 +713,8 @@ const deleteEvent = async (eventId, adminId, hardDelete = false) => {
       await createNotificationSafe({
         recipientId: event.creator._id,
         type: "event_cancelled",
-        title: "Su kien bi huy",
-        message: `Su kien \"${event.name}\" da bi huy boi admin.`,
+        title: "Sự kiện bị hủy",
+        message: `Sự kiện \"${event.name}\" Đã bị hủy`,
         priority: "critical",
         metadata: {
           eventId: event._id.toString(),

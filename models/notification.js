@@ -21,10 +21,13 @@ const notificationSchema = new mongoose.Schema(
         "event_minting_failed",
         "event_rejected",
         "event_cancelled",
+        "event_settled",
+        "comment_new",
         "comment_reply",
         "report_reviewed",
         "account_banned",
         "account_unbanned",
+        "ticket_post_sold",
       ],
     },
     title: {

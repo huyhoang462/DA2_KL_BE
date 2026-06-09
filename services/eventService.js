@@ -1061,7 +1061,6 @@ const createEvent = async (data, creatorId) => {
     session.endSession();
   }
 };
-
 const getEventsByUserId = async (userId) => {
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     const error = new Error("Invalid user ID format");
@@ -1095,11 +1094,20 @@ const getEventsByUserId = async (userId) => {
       },
     },
 
-    // --- STAGE 4: $addFields (Calculate totals) ---
+    // --- STAGE 4: $addFields (Calculate totals & set custom status order) ---
     {
       $addFields: {
-        statusPriority: {
-          $cond: [{ $eq: ["$status", "pending"] }, 0, 1],
+        // Thay thế statusPriority cũ bằng statusOrder mới
+        statusOrder: {
+          $switch: {
+            branches: [
+              { case: { $eq: ["$status", "ongoing"] }, then: 1 },
+              { case: { $eq: ["$status", "approved"] }, then: 2 },
+              { case: { $eq: ["$status", "upcoming"] }, then: 3 },
+              { case: { $eq: ["$status", "pending"] }, then: 4 },
+            ],
+            default: 5, // completed, settled, rejected, cancelled...
+          },
         },
         totalTicketsSold: {
           $sum: "$ticketTypes.quantitySold",
@@ -1109,11 +1117,14 @@ const getEventsByUserId = async (userId) => {
         },
       },
     },
-    // --- STAGE 5: $sort (Pending first, then newest first) ---
+
+    // --- STAGE 5: $sort (Sắp xếp theo thứ tự ưu tiên status, sau đó mới đến mới nhất) ---
     {
-      $sort: { statusPriority: 1, createdAt: -1 },
+      $sort: { statusOrder: 1, createdAt: -1 },
     },
+
     // --- STAGE 6: $project (Select only needed fields) ---
+    // Đặt project sau cùng để lọc bỏ các trường dư thừa (bao gồm cả statusOrder)
     {
       $project: {
         bannerImageUrl: 1,
@@ -1130,10 +1141,7 @@ const getEventsByUserId = async (userId) => {
       },
     },
 
-    // --- STAGE 6: $sort (Sort by creation date - newest first) ---
-    {
-      $sort: { createdAt: -1 },
-    },
+    // Đã XÓA bước STAGE 6 cũ ($sort by createdAt) ở đây vì nó làm hỏng logic sắp xếp phía trên
   ];
 
   const events = await Event.aggregate(aggregationPipeline);
