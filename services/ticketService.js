@@ -5,6 +5,7 @@ const OrderItem = require("../models/orderItem");
 const Order = require("../models/order");
 const mongoose = require("mongoose");
 const crypto = require("crypto");
+const { createNotificationSafe } = require("./notificationService");
 
 /**
  * Tạo tickets khi thanh toán thành công
@@ -1055,22 +1056,21 @@ const cancelTicketListing = async (ticketId, userId) => {
   }
 
   if (ticket.owner.toString() !== userId.toString()) {
-    const error = new Error(
-      "Forbidden: You do not own this ticket"
-    );
+    const error = new Error("Forbidden: You do not own this ticket");
     error.status = 403;
     throw error;
   }
 
   if (ticket.status !== "selling") {
     const error = new Error(
-      `Ticket is not currently listed for sale (current status: ${ticket.status})`
+      `Ticket is not currently listed for sale (current status: ${ticket.status})`,
     );
     error.status = 400;
     throw error;
   }
 
   ticket.status = "pending";
+
   await ticket.save();
 
   return {

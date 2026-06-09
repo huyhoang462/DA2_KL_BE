@@ -293,7 +293,20 @@ const createComment = async ({ postId, author, data }) => {
         createdBy: author._id,
       });
     }
-  }
+  } else  await createNotificationSafe({
+        recipientId: payload.replyToUser,
+        type: "comment_new",
+        title: "Bình luận mới",
+        message: "Bài viết của bạn có bình luận mới.",
+        priority: "medium",
+        metadata: {
+          postId: postId.toString(),
+          commentId: newComment._id.toString(),
+          repliedBy: author._id.toString(),
+        },
+        channels: ["in_app"],
+        createdBy: author._id,
+      });
 
   const populatedComment = await Comment.findById(newComment._id)
     .populate("author", "fullName email role")

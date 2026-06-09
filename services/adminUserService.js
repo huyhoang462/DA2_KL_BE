@@ -484,8 +484,8 @@ const banUser = async (userId, reason, adminId) => {
     await createNotificationSafe({
       recipientId: user._id,
       type: "account_banned",
-      title: "Tai khoan bi khoa",
-      message: `Tai khoan cua ban da bi khoa. Ly do: ${reason}`,
+      title: "Tài khoản bị khóa",
+      message: `Tài khoản của bạn đã bị khóa với lý do: ${reason}`,
       priority: "critical",
       metadata: {
         userId: user._id.toString(),
@@ -557,8 +557,8 @@ const unbanUser = async (userId, adminId) => {
     await createNotificationSafe({
       recipientId: user._id,
       type: "account_unbanned",
-      title: "Tai khoan da duoc mo khoa",
-      message: "Tai khoan cua ban da duoc kich hoat lai.",
+      title: "Tài khoản đã được mở khóa",
+      message: "Tài khoản của bạn đã được kích hoạt lại.",
       priority: "high",
       metadata: {
         userId: user._id.toString(),

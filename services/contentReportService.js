@@ -558,8 +558,8 @@ const reviewReport = async ({ reportId, userId, userRole, data }) => {
   await createNotificationSafe({
     recipientId: report.reporter,
     type: "report_reviewed",
-    title: "Bao cao da duoc xu ly",
-    message: `Bao cao cua ban da duoc xu ly voi ket qua: ${report.status}.`,
+    title: "Báo cáo đã được xử lý",
+    message: `Báo cáo của bạn đã được xử lý với kết quả: ${report.status}.`,
     priority: "medium",
     metadata: {
       reportId: report._id.toString(),
