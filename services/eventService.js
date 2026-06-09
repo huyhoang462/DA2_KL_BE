@@ -1582,10 +1582,10 @@ const getDashboardOverview = async (eventId) => {
       };
     });
 
-    const onChainEventId =
-      ticketTypes.length > 0 && ticketTypes.find((t) => t.onChainId != null)
-        ? ticketTypes.find((t) => t.onChainId != null).onChainId
-        : null;
+    const onChainIds = ticketTypes
+      .map((ticketType) => ticketType.onChainId)
+      .filter((onChainId) => onChainId != null);
+    const onChainEventId = onChainIds.length > 0 ? onChainIds[0] : null;
 
     return {
       success: true,
@@ -1596,6 +1596,7 @@ const getDashboardOverview = async (eventId) => {
         startDate: event.startDate,
         endDate: event.endDate,
         onChainEventId: onChainEventId,
+        onChainIds,
         settlementInfo: event.settlementInfo,
       },
       metrics: {
