@@ -1,11 +1,29 @@
 const { Queue } = require("bullmq");
+const IORedis = require("ioredis");
 
-// Cấu hình kết nối Redis
-const connection = {
+// Dùng 1 IORedis instance duy nhất cho toàn bộ BE
+// BullMQ sẽ tái sử dụng connection này thay vì tạo mới cho mỗi Queue
+const sharedRedisConnection = new IORedis({
   host: process.env.REDIS_HOST,
   port: parseInt(process.env.REDIS_PORT),
   password: process.env.REDIS_PASSWORD,
-};
+  maxRetriesPerRequest: null, // Bắt buộc cho BullMQ
+  retryStrategy: function (times) {
+    if (times > 10) return null;
+    return Math.min(times * 200, 5000);
+  },
+});
+
+sharedRedisConnection.on("error", (err) => {
+  console.error("❌ [Redis BE] Lỗi kết nối:", err.message);
+});
+
+sharedRedisConnection.on("connect", () => {
+  console.log("✅ [Redis BE] Kết nối thành công!");
+});
+
+// Alias ngắn để dùng cho các Queue
+const connection = sharedRedisConnection;
 
 // ------------------------------------------------------
 // Queue MINT NFT (mint-queue)

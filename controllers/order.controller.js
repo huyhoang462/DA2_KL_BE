@@ -85,6 +85,8 @@ const handleCreatePayment = async (req, res, next) => {
         approveAmount6Decimals,
         eventIds: onChainIds,
         quantities,
+        recipient: orderResult.recipient,
+        buyerAddress: orderResult.buyerAddress,
       },
       vndConfig: {
         paymentUrl,

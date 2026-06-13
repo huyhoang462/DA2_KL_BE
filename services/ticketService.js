@@ -183,6 +183,7 @@ const getPendingTicketsByUserId = async (userId) => {
       $match: {
         owner: new mongoose.Types.ObjectId(userId),
         status: "pending",
+        mintStatus: { $ne: "pending" },
       },
     },
     {

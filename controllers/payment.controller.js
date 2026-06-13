@@ -890,19 +890,7 @@ const handleFinalizeOrder = async (req, res) => {
   }
 };
 
-module.exports = {
-  handleVnpayIpn,
-  handleVnpayReturn,
-  handleRelayerCallback,
-  processSuccessfulPayment,
-  processFailedPayment,
-  processCancelledPayment, // ⭐ Export thêm
-  getFailureReason, // ⭐ Export để dùng ở nơi khác
-  handleFinalizeOrder,
-  handleFinalizeOrderWeb3,
-  handleCreateResaleOrder,
-  handleFinalizeResaleOrder,
-};
+
 
 /**
  * Tạo order khi người dùng muốn mua lại vé trên marketplace (hỗ trợ nhiều vé)
@@ -1476,3 +1464,16 @@ async function handleFinalizeOrderWeb3(req, res) {
     return res.status(500).json({ success: false, message: error.message });
   }
 }
+module.exports = {
+  handleVnpayIpn,
+  handleVnpayReturn,
+  handleRelayerCallback,
+  processSuccessfulPayment,
+  processFailedPayment,
+  processCancelledPayment, // ⭐ Export thêm
+  getFailureReason, // ⭐ Export để dùng ở nơi khác
+  handleFinalizeOrder,
+  handleFinalizeOrderWeb3,
+  handleCreateResaleOrder,
+  handleFinalizeResaleOrder,
+};
