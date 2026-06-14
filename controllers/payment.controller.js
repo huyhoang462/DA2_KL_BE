@@ -489,6 +489,39 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
 
     console.log(`🎫 Created ${tickets.length} tickets`);
 
+    // --- UPDATE POPULARITY SCORE CHO EVENT ---
+    try {
+      const EventModel = require("../models/event");
+      const ShowModel = require("../models/show");
+      
+      const eventQuantityMap = {};
+      
+      for (const item of existingItems) {
+        const tt = await TicketType.findById(item.ticketType).session(session);
+        if (tt) {
+          const show = await ShowModel.findById(tt.show).session(session);
+          if (show && show.event) {
+            const eventIdStr = show.event.toString();
+            if (!eventQuantityMap[eventIdStr]) {
+              eventQuantityMap[eventIdStr] = 0;
+            }
+            eventQuantityMap[eventIdStr] += item.quantity;
+          }
+        }
+      }
+      
+      for (const [eventIdStr, qty] of Object.entries(eventQuantityMap)) {
+        await EventModel.findByIdAndUpdate(
+          eventIdStr,
+          { $inc: { popularityScore: qty } },
+          { session }
+        );
+      }
+      console.log(`📈 Updated popularity score for events:`, eventQuantityMap);
+    } catch (popErr) {
+      console.error("❌ Lỗi cập nhật popularity score:", popErr);
+    }
+
     // ✅ COMMIT TRANSACTION (Lưu DB thành công rồi mới làm việc khác)
     await session.commitTransaction();
     console.log(`✅ Transaction committed successfully for order ${order._id}`);

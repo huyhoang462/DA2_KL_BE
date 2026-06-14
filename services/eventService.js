@@ -10,6 +10,7 @@ const OrderItem = require("../models/orderItem");
 const Ticket = require("../models/ticket");
 const mongoose = require("mongoose");
 const { createNotificationSafe } = require("./notificationService");
+const { generateEmbedding } = require("./aiService");
 const {
   formatPaginatedResponse,
   createPaginationStages,
@@ -521,6 +522,25 @@ const updateEvent = async (eventId, updateData) => {
       }
     });
 
+    // --- SINH LẠI EMBEDDING NẾU CÓ THAY ĐỔI ---
+    if (updateData.name !== undefined || updateData.description !== undefined || updateData.category !== undefined) {
+      const newName = updateData.name !== undefined ? updateData.name : existingEvent.name;
+      const newDesc = updateData.description !== undefined ? updateData.description : existingEvent.description;
+      let newCategoryName = "";
+      
+      const categoryIdToFetch = updateData.category !== undefined ? updateData.category : existingEvent.category;
+      if (categoryIdToFetch) {
+        const cat = await Category.findById(categoryIdToFetch);
+        if (cat) newCategoryName = cat.name;
+      }
+      
+      const textToEmbed = `${newName} ${newCategoryName} ${newDesc}`.trim();
+      const embedding = await generateEmbedding(textToEmbed);
+      if (embedding && embedding.length > 0) {
+        eventFieldsToUpdate.embedding = embedding;
+      }
+    }
+
     if (
       updateData.status !== undefined &&
       updateData.status !== existingEvent.status
@@ -990,6 +1010,10 @@ const createEvent = async (data, creatorId) => {
       payoutMethodId = savedPayoutMethod._id;
     }
 
+    // --- SINH EMBEDDING ---
+    const textToEmbed = `${name} ${category.name} ${description}`.trim();
+    const embedding = await generateEmbedding(textToEmbed);
+
     const newEvent = new Event({
       name,
       description,
@@ -1003,6 +1027,7 @@ const createEvent = async (data, creatorId) => {
       category: category._id,
       payoutMethod: payoutMethodId,
       status: status || "pending",
+      embedding: embedding,
     });
     const savedEvent = await newEvent.save({ session });
 

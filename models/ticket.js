@@ -34,9 +34,11 @@ const ticketSchema = new mongoose.Schema(
     checkinAt: { type: Date },
     lastCheckOutAt: { type: Date },
 
-    // --- THÔNG TIN NFT (để dành) ---
+    // --- THÔNG TIN NFT ---
     blockchainNetwork: { type: String },
-    contractAddress: { type: String, unique: true },
+    // sparse: true → chỉ enforce unique khi giá trị không phải null/undefined
+    // (tránh lỗi duplicate key khi nhiều vé chưa mint đều có contractAddress = null)
+    contractAddress: { type: String, unique: true, sparse: true },
     tokenId: { type: String },
     mintStatus: {
       type: String,

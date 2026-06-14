@@ -69,7 +69,35 @@ const userExtractor = async (request, response, next) => {
   }
 };
 
+// Middleware 3: Optional user extractor (không throw 401 nếu không có token)
+const optionalUserExtractor = async (request, response, next) => {
+  if (!request.token) {
+    return next();
+  }
+
+  try {
+    const decodedToken = jwt.verify(
+      request.token,
+      process.env.ACCESS_TOKEN_SECRET,
+    );
+
+    if (decodedToken.id) {
+      const user = await User.findById(decodedToken.id).select(
+        "role email fullName phone",
+      );
+      if (user) {
+        request.user = user;
+      }
+    }
+    next();
+  } catch (error) {
+    // Không ném lỗi, coi như user chưa đăng nhập
+    next();
+  }
+};
+
 module.exports = {
   tokenExtractor,
   userExtractor,
+  optionalUserExtractor,
 };

@@ -91,6 +91,15 @@ const eventSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    // --- AI & RECOMMENDATION FIELDS ---
+    embedding: {
+      type: [Number],
+      default: [],
+    },
+    popularityScore: {
+      type: Number,
+      default: 0,
+    },
     // --- FEATURED/PROMOTION FIELDS ---
     featured: {
       type: Boolean,
