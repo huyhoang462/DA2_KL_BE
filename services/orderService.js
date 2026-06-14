@@ -139,7 +139,7 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
     const pendingOrders = await Order.find({
       buyer: buyerId,
       status: "pending",
-      createdAt: { $gte: new Date(Date.now() - 15 * 60 * 1000) },
+      expiresAt: { $lt: new Date()},
     });
 
     if (pendingOrders.length > 0) {
