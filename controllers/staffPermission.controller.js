@@ -53,7 +53,7 @@ const handleAssignMultipleStaff = async (req, res, next) => {
 
     if (!staffIds || !Array.isArray(staffIds) || !eventId) {
       const error = new Error(
-        "Missing required fields: staffIds (array), eventId"
+        "Missing required fields: staffIds (array), eventId",
       );
       error.status = 400;
       throw error;
@@ -83,7 +83,7 @@ const handleAssignStaffToMultipleEvents = async (req, res, next) => {
 
     if (!staffId || !eventIds || !Array.isArray(eventIds)) {
       const error = new Error(
-        "Missing required fields: staffId, eventIds (array)"
+        "Missing required fields: staffId, eventIds (array)",
       );
       error.status = 400;
       throw error;
@@ -92,7 +92,7 @@ const handleAssignStaffToMultipleEvents = async (req, res, next) => {
     const result = await assignStaffToMultipleEvents(
       staffId,
       eventIds,
-      organizerId
+      organizerId,
     );
 
     res.status(201).json({
@@ -142,7 +142,7 @@ const handleRemoveMultipleStaff = async (req, res, next) => {
 
     if (!staffIds || !Array.isArray(staffIds) || !eventId) {
       const error = new Error(
-        "Missing required fields: staffIds (array), eventId"
+        "Missing required fields: staffIds (array), eventId",
       );
       error.status = 400;
       throw error;
@@ -151,7 +151,7 @@ const handleRemoveMultipleStaff = async (req, res, next) => {
     const result = await removeMultipleStaffFromEvent(
       staffIds,
       eventId,
-      organizerId
+      organizerId,
     );
 
     res.status(200).json(result);
@@ -174,7 +174,7 @@ const handleRemoveStaffFromMultipleEvents = async (req, res, next) => {
 
     if (!staffId || !eventIds || !Array.isArray(eventIds)) {
       const error = new Error(
-        "Missing required fields: staffId, eventIds (array)"
+        "Missing required fields: staffId, eventIds (array)",
       );
       error.status = 400;
       throw error;
@@ -183,7 +183,7 @@ const handleRemoveStaffFromMultipleEvents = async (req, res, next) => {
     const result = await removeStaffFromMultipleEvents(
       staffId,
       eventIds,
-      organizerId
+      organizerId,
     );
 
     res.status(200).json(result);
@@ -232,10 +232,11 @@ const handleGetEventsByStaff = async (req, res, next) => {
     if (
       targetStaffId !== currentUserId &&
       currentUserRole !== "admin" &&
-      currentUserRole !== "user"
+      currentUserRole !== "user" &&
+      currentUserRole !== "organizer"
     ) {
       const error = new Error(
-        "You don't have permission to view this staff's events"
+        "You don't have permission to view this staff's events",
       );
       error.status = 403;
       throw error;
