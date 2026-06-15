@@ -523,17 +523,28 @@ const updateEvent = async (eventId, updateData) => {
     });
 
     // --- SINH LẠI EMBEDDING NẾU CÓ THAY ĐỔI ---
-    if (updateData.name !== undefined || updateData.description !== undefined || updateData.category !== undefined) {
-      const newName = updateData.name !== undefined ? updateData.name : existingEvent.name;
-      const newDesc = updateData.description !== undefined ? updateData.description : existingEvent.description;
+    if (
+      updateData.name !== undefined ||
+      updateData.description !== undefined ||
+      updateData.category !== undefined
+    ) {
+      const newName =
+        updateData.name !== undefined ? updateData.name : existingEvent.name;
+      const newDesc =
+        updateData.description !== undefined
+          ? updateData.description
+          : existingEvent.description;
       let newCategoryName = "";
-      
-      const categoryIdToFetch = updateData.category !== undefined ? updateData.category : existingEvent.category;
+
+      const categoryIdToFetch =
+        updateData.category !== undefined
+          ? updateData.category
+          : existingEvent.category;
       if (categoryIdToFetch) {
         const cat = await Category.findById(categoryIdToFetch);
         if (cat) newCategoryName = cat.name;
       }
-      
+
       const textToEmbed = `${newName} ${newCategoryName} ${newDesc}`.trim();
       const embedding = await generateEmbedding(textToEmbed);
       if (embedding && embedding.length > 0) {
@@ -1502,22 +1513,23 @@ const getDashboardOverview = async (eventId) => {
       ticketType: { $in: ticketTypeIds },
     }).populate("order");
 
-    // Filter orders: chỉ lấy paid và pending
-    const relevantOrderIds = [
-      ...new Set(
-        orderItems
-          .filter(
-            (item) =>
-              item.order &&
-              (item.order.status === "paid" || item.order.status === "pending"),
-          )
-          .map((item) => item.order._id.toString()),
-      ),
-    ];
-
-    const orders = await Order.find({
-      _id: { $in: relevantOrderIds },
+    // ⭐ FIX & TỐI ƯU:
+    // Không cần gọi Order.find() lại lần nữa vì orderItems đã được populate("order")
+    // Lấy thẳng danh sách Orders từ orderItems. Dùng Map để lọc các đơn hàng trùng lặp.
+    const uniqueOrdersMap = new Map();
+    orderItems.forEach((item) => {
+      if (item.order && item.order._id) {
+        uniqueOrdersMap.set(item.order._id.toString(), item.order);
+      }
     });
+
+    // Tổng hợp tất cả các đơn hàng (bao gồm paid, pending, cancelled, failed)
+    const allOrders = Array.from(uniqueOrdersMap.values());
+
+    // Filter orders: chỉ lấy paid và pending
+    const orders = allOrders.filter(
+      (order) => order.status === "paid" || order.status === "pending",
+    );
 
     // 5. Tính toán metrics
     const paidOrders = orders.filter((order) => order.status === "paid");
@@ -1545,10 +1557,7 @@ const getDashboardOverview = async (eventId) => {
       0,
     );
 
-    // Conversion rate: (paid orders / (paid + failed + cancelled)) * 100
-    const allOrders = await Order.find({
-      _id: { $in: orderItems.map((item) => item.order._id) },
-    });
+    // Conversion rate: (paid orders / toàn bộ tất cả các order) * 100
     const conversionRate =
       allOrders.length > 0
         ? ((paidOrders.length / allOrders.length) * 100).toFixed(2)
@@ -1665,7 +1674,6 @@ const getDashboardOverview = async (eventId) => {
     throw error;
   }
 };
-
 /**
  * Revenue Analytics - Phân tích doanh thu theo thời gian
  * @param {string} eventId - ID của event
@@ -1690,12 +1698,17 @@ const getRevenueAnalytics = async (
     }
 
     // 2. Xác định date range
+    // ⭐ FIX LỖI TIMEZONE / TRUNCATION ĐỂ BAO GỒM CẢ FAKE DATA
     const dateFilter = {};
     if (startDate) {
-      dateFilter.$gte = new Date(startDate);
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0); // Đảm bảo lấy từ 00:00:00 của ngày bắt đầu
+      dateFilter.$gte = start;
     }
     if (endDate) {
-      dateFilter.$lte = new Date(endDate);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999); // Ép lấy trọn vẹn đến 23:59:59 của ngày kết thúc
+      dateFilter.$lte = end;
     }
 
     // 3. Lấy shows và ticket types
@@ -1749,7 +1762,6 @@ const getRevenueAnalytics = async (
     ]);
 
     // 6. Tính tổng tickets bán được theo từng ngày/giờ
-    // Lấy tất cả tickets với order và createdAt
     const tickets = await Ticket.find({
       order: { $in: orderIds },
     })

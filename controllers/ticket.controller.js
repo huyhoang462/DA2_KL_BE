@@ -18,7 +18,6 @@ const handleGetMyTickets = async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-
     const tickets = await getTicketsByUserId(userId);
 
     res.status(200).json({
@@ -168,8 +167,6 @@ const handleGetOrganizerStats = async (req, res, next) => {
   try {
     const { showId } = req.params;
 
-    console.log("[GET ORGANIZER STATS] Request:", { showId });
-
     const result = await getTicketTypesStatsForOrganizer(showId);
 
     res.status(200).json(result);
@@ -251,4 +248,3 @@ module.exports = {
   handleGetOrganizerTickets,
   handleCancelTicketListing,
 };
-

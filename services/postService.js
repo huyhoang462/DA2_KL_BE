@@ -196,18 +196,19 @@ const createPost = async ({ author, data }) => {
   }
   let normalizedRelatedTickets = [];
 
-  if (Array.isArray(relatedTickets)) {
-    normalizedRelatedTickets = relatedTickets.map((t) => ({
-      ticket: t?.ticketId,
-      price: t?.price,
-    }));
-  } else {
-    const error = new Error(
-      "Type of relatedTickets is invalid. It must be an array of { ticket: ObjectId, price: number }",
-    );
-    error.status = 404;
-    throw error;
-  }
+  if (postType === "marketplace_listing")
+    if (Array.isArray(relatedTickets)) {
+      normalizedRelatedTickets = relatedTickets.map((t) => ({
+        ticket: t?.ticketId,
+        price: t?.price,
+      }));
+    } else {
+      const error = new Error(
+        "Type of relatedTickets is invalid. It must be an array of { ticket: ObjectId, price: number }",
+      );
+      error.status = 404;
+      throw error;
+    }
 
   if (normalizedRelatedTickets.length > 0) {
     const seen = new Set();
