@@ -854,7 +854,6 @@ const createEvent = async (data, creatorId) => {
     startDate,
     endDate,
     category: categoryId,
-    payoutMethod: payoutMethodData,
     shows,
     status,
   } = data;
@@ -867,7 +866,6 @@ const createEvent = async (data, creatorId) => {
     startDate,
     endDate,
     categoryId,
-    payoutMethodData,
     shows,
   };
   for (const [field, value] of Object.entries(requiredFields)) {
@@ -992,35 +990,6 @@ const createEvent = async (data, creatorId) => {
   try {
     session.startTransaction();
 
-    // --- XỬ LÝ PAYOUT METHOD ---
-    let payoutMethodId;
-
-    if (payoutMethodData.id) {
-      // Trường hợp có ID - dùng PayoutMethod cũ
-      const existingPayoutMethod = await PayoutMethod.findOne({
-        _id: payoutMethodData.id,
-        user: creator._id, // Đảm bảo PayoutMethod thuộc về user hiện tại
-      }).session(session);
-
-      if (!existingPayoutMethod) {
-        const error = new Error(
-          "PayoutMethod not found or not belong to current user",
-        );
-        error.status = 404;
-        throw error;
-      }
-
-      payoutMethodId = existingPayoutMethod._id;
-    } else {
-      // Trường hợp không có ID - tạo mới PayoutMethod
-      const newPayoutMethod = new PayoutMethod({
-        ...payoutMethodData,
-        user: creator._id,
-      });
-      const savedPayoutMethod = await newPayoutMethod.save({ session });
-      payoutMethodId = savedPayoutMethod._id;
-    }
-
     // --- SINH EMBEDDING ---
     const textToEmbed = `${name} ${category.name} ${description}`.trim();
     const embedding = await generateEmbedding(textToEmbed);
@@ -1036,7 +1005,6 @@ const createEvent = async (data, creatorId) => {
       organizer: organizerSnapshot,
       creator: creator._id,
       category: category._id,
-      payoutMethod: payoutMethodId,
       status: status || "pending",
       embedding: embedding,
     });

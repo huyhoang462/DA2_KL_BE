@@ -47,7 +47,7 @@ const eventSchema = new mongoose.Schema(
     payoutMethod: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "PayoutMethod",
-      required: true,
+      required: false,
     },
     status: {
       type: String,
