@@ -66,24 +66,26 @@ const createTicketsForOrder = async (orderId, ownerId, session = null) => {
   return createdTickets;
 };
 
-/**
- * Generate unique QR code
- */
-const generateQRCode = (orderId, ticketTypeId, index) => {
-  const timestamp = Date.now();
-  const random = crypto.randomBytes(8).toString("hex");
-  const qr = `TICKET-${orderId}-${ticketTypeId}-${index}-${timestamp}-${random}`;
+const SAFE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 
-  // Log mức debug cho quá trình sinh QR (không in dữ liệu nhạy cảm)
-  console.log(
-    "[QR BUILD] base=order:%s-ticketType:%s-index:%d ts=%d",
-    orderId,
-    ticketTypeId.toString(),
-    index,
-    timestamp,
-  );
+const generateQRCode = (orderId, ticketTypeId, index, length = 8) => {
+  let code = "";
+  // Lấy ra các byte ngẫu nhiên
+  const randomBytes = crypto.randomBytes(length);
 
-  return qr;
+  for (let i = 0; i < length; i++) {
+    // Map giá trị byte (0-255) vào index của bảng chữ cái
+    const randomIndex = randomBytes[i] % SAFE_ALPHABET.length;
+    code += SAFE_ALPHABET[randomIndex];
+  }
+
+  // Format cho đẹp: Chia nửa ra và nhét dấu "-" vào giữa
+  // Ví dụ length = 8 -> XXXXXXXX -> XXXX-XXXX
+  const half = Math.ceil(length / 2);
+  const formattedCode = `${code.slice(0, half)}-${code.slice(half)}`;
+
+  // Thêm prefix để dễ nhận diện (VD: TK-A3X9-K8M2)
+  return formattedCode;
 };
 
 /**
