@@ -3,6 +3,7 @@ const Order = require("../models/order");
 const OrderItem = require("../models/orderItem");
 const TicketType = require("../models/ticketType");
 const Show = require("../models/show");
+const Booking = require("../models/booking");
 
 // Hàm tính Cosine Similarity
 const cosineSimilarity = (vecA, vecB) => {
@@ -30,24 +31,19 @@ const getRecommendations = async (req, res, next) => {
     let userPurchasedEventIds = [];
 
     if (userId) {
-      // Tìm các order đã thanh toán
-      const orders = await Order.find({ buyer: userId, status: { $in: ["paid", "completed"] } });
-      const orderIds = orders.map(o => o._id);
+      // Tối ưu hóa: Tìm trực tiếp trong bảng Booking (O(1) lookup)
+      const bookings = await Booking.find({ user: userId }).lean();
       
-      if (orderIds.length > 0) {
-        const orderItems = await OrderItem.find({ order: { $in: orderIds } });
-        const ticketTypeIds = orderItems.map(item => item.ticketType);
-        const ticketTypes = await TicketType.find({ _id: { $in: ticketTypeIds } });
-        const showIds = ticketTypes.map(tt => tt.show);
-        const shows = await Show.find({ _id: { $in: showIds } });
+      if (bookings.length > 0) {
+        userPurchasedEventIds = [...new Set(bookings.map(b => b.event.toString()))];
         
-        userPurchasedEventIds = [...new Set(shows.map(s => s.event.toString()))];
-        
-        // Lấy embedding của các sự kiện đã mua
-        const purchasedEvents = await Event.find({
-          _id: { $in: userPurchasedEventIds },
-          embedding: { $exists: true, $not: { $size: 0 } }
-        });
+        // Cold-Start: Cần ít nhất 2 event để tạo user embedding
+        if (userPurchasedEventIds.length >= 2) {
+          // Lấy embedding của các sự kiện đã mua
+          const purchasedEvents = await Event.find({
+            _id: { $in: userPurchasedEventIds },
+            embedding: { $exists: true, $not: { $size: 0 } }
+          });
 
         if (purchasedEvents.length >= 2) {
           const vectorLength = purchasedEvents[0].embedding.length;
@@ -63,6 +59,7 @@ const getRecommendations = async (req, res, next) => {
           for (let i = 0; i < vectorLength; i++) {
             userEmbedding[i] /= purchasedEvents.length;
           }
+        }
         }
       }
     }

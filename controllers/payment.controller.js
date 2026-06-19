@@ -3,6 +3,9 @@ const Order = require("../models/order");
 const OrderItem = require("../models/orderItem");
 const TicketType = require("../models/ticketType");
 const Ticket = require("../models/ticket");
+const EventModel = require("../models/event");
+const ShowModel = require("../models/show");
+const Booking = require("../models/booking");
 const { addRelayerBuyTicketJob } = require("../services/queueService");
 const mongoose = require("mongoose");
 const { createTicketsForOrder } = require("../services/ticketService");
@@ -391,6 +394,50 @@ const handleVnpayReturn = async (req, res) => {
     );
   }
 };
+
+// Hàm phụ trợ cập nhật điểm và Booking (dùng chung cho VNPay và Web3)
+const updatePopularityAndBooking = async (orderId, buyerId, existingItems) => {
+  try {
+    const eventQuantityMap = {};
+    for (const item of existingItems) {
+      const tt = await TicketType.findById(item.ticketType);
+      if (tt) {
+        const show = await ShowModel.findById(tt.show);
+        if (show && show.event) {
+          const eventIdStr = show.event.toString();
+          if (!eventQuantityMap[eventIdStr]) {
+            eventQuantityMap[eventIdStr] = 0;
+          }
+          eventQuantityMap[eventIdStr] += item.quantity;
+        }
+      }
+    }
+    
+    for (const [eventIdStr, qty] of Object.entries(eventQuantityMap)) {
+      const updatedEvent = await EventModel.findByIdAndUpdate(
+        eventIdStr,
+        { $inc: { popularityScore: qty } },
+        { new: true } 
+      );
+      
+      if (updatedEvent) {
+        console.log(`📈 Tăng popularityScore cho event ${eventIdStr}: +${qty} -> Tổng: ${updatedEvent.popularityScore}`);
+      } else {
+        console.warn(`⚠️ Không tìm thấy event ${eventIdStr} để tăng popularityScore!`);
+      }
+
+      await Booking.findOneAndUpdate(
+        { user: buyerId, event: eventIdStr },
+        { user: buyerId, event: eventIdStr },
+        { upsert: true, new: true }
+      );
+      console.log(`✅ Upserted Booking record cho User ${buyerId} và Event ${eventIdStr}`);
+    }
+  } catch (popErr) {
+    console.error("❌ Lỗi cập nhật popularity score hoặc Booking:", popErr);
+  }
+};
+
 const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
   const session = await mongoose.startSession();
 
@@ -487,44 +534,12 @@ const processSuccessfulPayment = async (order, transactionNo, bankCode) => {
       session,
     );
 
-    console.log(`🎫 Created ${tickets.length} tickets`);
-
-    // --- UPDATE POPULARITY SCORE CHO EVENT ---
-    try {
-      const EventModel = require("../models/event");
-      const ShowModel = require("../models/show");
-      
-      const eventQuantityMap = {};
-      
-      for (const item of existingItems) {
-        const tt = await TicketType.findById(item.ticketType).session(session);
-        if (tt) {
-          const show = await ShowModel.findById(tt.show).session(session);
-          if (show && show.event) {
-            const eventIdStr = show.event.toString();
-            if (!eventQuantityMap[eventIdStr]) {
-              eventQuantityMap[eventIdStr] = 0;
-            }
-            eventQuantityMap[eventIdStr] += item.quantity;
-          }
-        }
-      }
-      
-      for (const [eventIdStr, qty] of Object.entries(eventQuantityMap)) {
-        await EventModel.findByIdAndUpdate(
-          eventIdStr,
-          { $inc: { popularityScore: qty } },
-          { session }
-        );
-      }
-      console.log(`📈 Updated popularity score for events:`, eventQuantityMap);
-    } catch (popErr) {
-      console.error("❌ Lỗi cập nhật popularity score:", popErr);
-    }
-
     // ✅ COMMIT TRANSACTION (Lưu DB thành công rồi mới làm việc khác)
     await session.commitTransaction();
     console.log(`✅ Transaction committed successfully for order ${order._id}`);
+
+    // --- UPDATE POPULARITY SCORE & CREATE BOOKING ---
+    await updatePopularityAndBooking(order._id, order.buyer, existingItems);
 
     // ============================================================
     // 👉 ĐOẠN 2: BẮN JOB SANG WORKER + CẬP NHẬT mintStatus
@@ -1461,6 +1476,9 @@ async function handleFinalizeOrderWeb3(req, res) {
       );
 
       await session.commitTransaction();
+
+      // Cập nhật Popularity Score và Booking sau khi commit thành công
+      await updatePopularityAndBooking(order._id, order.buyer, orderItems);
 
       // Notification (best-effort, ngoài transaction)
       await createNotificationSafe({

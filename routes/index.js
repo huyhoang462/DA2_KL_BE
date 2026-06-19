@@ -61,6 +61,6 @@ const initRoutes = (app) => {
   app.use("/api/notifications", notificationRoutes);
   app.use("/api/organizer-profile", organizerProfileRoutes);
   app.use("/api/gas", gasFundRoutes);
-  app.use("/api/v1/recommendation", recommendationRoutes);
+  app.use("/api/recommendation", recommendationRoutes);
 };
 module.exports = initRoutes;
