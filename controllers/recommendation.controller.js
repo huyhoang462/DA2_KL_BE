@@ -49,7 +49,7 @@ const getRecommendations = async (req, res, next) => {
           embedding: { $exists: true, $not: { $size: 0 } }
         });
 
-        if (purchasedEvents.length > 0) {
+        if (purchasedEvents.length >= 2) {
           const vectorLength = purchasedEvents[0].embedding.length;
           userEmbedding = new Array(vectorLength).fill(0);
           
@@ -108,12 +108,47 @@ const getRecommendations = async (req, res, next) => {
 
     // 4. Sắp xếp và lấy Top 10
     scoredEvents.sort((a, b) => b.finalScore - a.finalScore);
-    const top10 = scoredEvents.slice(0, 10).map(e => {
+    let top10 = scoredEvents.slice(0, 10).map(e => {
       delete e._id;
       delete e.__v;
       delete e.embedding; // Xóa mảng số lớn trước khi gửi xuống client
       return e;
     });
+
+    // 5. Đảm bảo ít nhất 4 item (Nếu chưa đủ 4, lấy thêm các sự kiện mới nhất)
+    if (top10.length < 4) {
+      const top10Ids = top10.map(e => e.id);
+      const excludeIds = [...userPurchasedEventIds, ...top10Ids];
+      
+      const newQuery = {
+        status: { $in: ["approved", "upcoming", "ongoing"] },
+        _id: { $nin: excludeIds }
+      };
+      
+      const extraEvents = await Event.find(newQuery)
+        .populate("category", "name")
+        .sort({ createdAt: -1 })
+        .limit(4 - top10.length)
+        .lean();
+        
+      const formattedExtra = extraEvents.map(event => {
+        const popScore = (event.popularityScore || 0) / maxPopularity;
+        return {
+          ...event,
+          id: event._id.toString(),
+          finalScore: popScore,
+          similarityScore: 0,
+          popularityNormalized: popScore
+        };
+      }).map(e => {
+        delete e._id;
+        delete e.__v;
+        delete e.embedding;
+        return e;
+      });
+      
+      top10 = [...top10, ...formattedExtra];
+    }
 
     res.status(200).json(top10);
   } catch (error) {
