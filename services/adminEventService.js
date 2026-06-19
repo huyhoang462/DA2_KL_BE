@@ -289,7 +289,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
 
     const event = await Event.findById(eventId).populate(
       "creator",
-      "_id email fullName",
+      "_id email fullName walletAddress",
     );
 
     if (!event) {
@@ -359,6 +359,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
           { name: "checkinGasPerTicket", type: "uint256" },
           { name: "expiryTime", type: "uint64" },
           { name: "nonce", type: "uint256" },
+          { name: "organizer", type: "address" },
         ],
       };
 
@@ -379,6 +380,10 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
 
         const nonce = Math.floor(Math.random() * 1000000000);
 
+        if (!event.creator || !event.creator.walletAddress) {
+          throw new Error("Người tạo sự kiện chưa liên kết địa chỉ ví Web3 (walletAddress). Vui lòng yêu cầu nhà tổ chức cập nhật ví trước khi duyệt.");
+        }
+
         const voucherData = {
           eventId: onChainId,
           quantity: tt.quantityTotal,
@@ -388,6 +393,7 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
           checkinGasPerTicket,
           expiryTime,
           nonce,
+          organizer: event.creator.walletAddress,
         };
 
         const signature = await adminWallet.signTypedData(
