@@ -1,7 +1,7 @@
 const Show = require("../models/show");
 const TicketType = require("../models/ticketType");
 const Ticket = require("../models/ticket");
-const { addExpireJob } = require("./queueService");
+// const { addExpireJob } = require("./queueService"); // Bỏ vì không dùng expire-queue nữa
 
 /**
  * Cập nhật status của các shows dựa trên thời gian hiện tại
@@ -63,7 +63,7 @@ async function updateShowStatuses() {
     // 4. Với các show vừa chuyển sang completed:
     //    - Tìm tất cả TicketType thuộc các show này
     //    - Expire tất cả vé (trừ cancelled/expired) thuộc các show đó
-    //    - Với vé đã mint (mintStatus="minted") sẽ đẩy job sang Worker qua expire-queue
+    //    - (Đã bỏ) Không còn bắn job sang Worker qua expire-queue nữa.
 
     if (showIdsToComplete.length > 0) {
       const ticketTypes = await TicketType.find({
@@ -83,15 +83,6 @@ async function updateShowStatuses() {
 
       const allTicketTypeIds = ticketTypes.map((tt) => tt._id);
 
-      // Lấy danh sách tokenId các vé đã mint và sắp bị expire để bắn sang worker
-      const mintedTicketsToExpire = await Ticket.find({
-        ticketType: { $in: allTicketTypeIds },
-        status: { $nin: ["expired", "cancelled"] },
-        mintStatus: "minted",
-      })
-        .select("tokenId ticketType")
-        .lean();
-
       // Expire tất cả vé thuộc các show vừa completed (trừ cancelled/expired)
       const ticketUpdateResult = await Ticket.updateMany(
         {
@@ -105,29 +96,6 @@ async function updateShowStatuses() {
         console.log(
           `✅ Expired ${ticketUpdateResult.modifiedCount || 0} ticket(s) for completed show(s)`,
         );
-      }
-
-      // Group tokenIds theo show để bắn job expire
-      if (mintedTicketsToExpire.length > 0) {
-        const ticketTypeToShow = new Map();
-        for (const tt of ticketTypes) {
-          ticketTypeToShow.set(tt._id.toString(), tt.show.toString());
-        }
-
-        const tokenIdsByShow = new Map();
-        for (const t of mintedTicketsToExpire) {
-          if (!t.tokenId) continue;
-          const showId = ticketTypeToShow.get(t.ticketType.toString());
-          if (!showId) continue;
-          if (!tokenIdsByShow.has(showId)) tokenIdsByShow.set(showId, []);
-          tokenIdsByShow.get(showId).push(t.tokenId);
-        }
-
-        for (const [showId, tokenIds] of tokenIdsByShow.entries()) {
-          if (tokenIds.length > 0) {
-            await addExpireJob(tokenIds, showId);
-          }
-        }
       }
     }
 
