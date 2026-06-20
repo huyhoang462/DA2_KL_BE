@@ -127,24 +127,34 @@ const handleRelayerCallback = async (req, res) => {
           let modifiedCount = 0;
 
           if (ticketsToUpdate.length > 0) {
-            if (tokenIds && Array.isArray(tokenIds) && tokenIds.length === ticketsToUpdate.length) {
+            if (
+              tokenIds &&
+              Array.isArray(tokenIds) &&
+              tokenIds.length === ticketsToUpdate.length
+            ) {
               // Assign distinct tokenIds
               for (let i = 0; i < ticketsToUpdate.length; i++) {
                 const ticket = ticketsToUpdate[i];
                 ticket.mintStatus = "minted";
-                ticket.blockchainNetwork = chainId || (receipt && receipt.chainId) || null;
+                ticket.blockchainNetwork =
+                  chainId || (receipt && receipt.chainId) || null;
                 ticket.contractAddress = contractAddress || null;
                 ticket.tokenId = String(tokenIds[i]);
                 await ticket.save({ session });
                 modifiedCount++;
               }
-              console.log(`[RELAYER CALLBACK] Assigned ${modifiedCount} tokenIds to tickets`);
+              console.log(
+                `[RELAYER CALLBACK] Assigned ${modifiedCount} tokenIds to tickets`,
+              );
             } else {
-              console.warn("[RELAYER CALLBACK] tokenIds missing or length mismatch with tickets", {
-                tokenIdsCount: tokenIds ? tokenIds.length : 0,
-                ticketsCount: ticketsToUpdate.length,
-              });
-              
+              console.warn(
+                "[RELAYER CALLBACK] tokenIds missing or length mismatch with tickets",
+                {
+                  tokenIdsCount: tokenIds ? tokenIds.length : 0,
+                  ticketsCount: ticketsToUpdate.length,
+                },
+              );
+
               const ticketUpdate = {
                 $set: {
                   mintStatus: "minted",
@@ -159,7 +169,8 @@ const handleRelayerCallback = async (req, res) => {
                 ticketUpdate,
                 { session },
               );
-              modifiedCount = updateResult.modifiedCount ?? updateResult.nModified ?? 0;
+              modifiedCount =
+                updateResult.modifiedCount ?? updateResult.nModified ?? 0;
             }
           }
 
@@ -412,26 +423,32 @@ const updatePopularityAndBooking = async (orderId, buyerId, existingItems) => {
         }
       }
     }
-    
+
     for (const [eventIdStr, qty] of Object.entries(eventQuantityMap)) {
       const updatedEvent = await EventModel.findByIdAndUpdate(
         eventIdStr,
         { $inc: { popularityScore: qty } },
-        { new: true } 
+        { new: true },
       );
-      
+
       if (updatedEvent) {
-        console.log(`📈 Tăng popularityScore cho event ${eventIdStr}: +${qty} -> Tổng: ${updatedEvent.popularityScore}`);
+        console.log(
+          `📈 Tăng popularityScore cho event ${eventIdStr}: +${qty} -> Tổng: ${updatedEvent.popularityScore}`,
+        );
       } else {
-        console.warn(`⚠️ Không tìm thấy event ${eventIdStr} để tăng popularityScore!`);
+        console.warn(
+          `⚠️ Không tìm thấy event ${eventIdStr} để tăng popularityScore!`,
+        );
       }
 
       await Booking.findOneAndUpdate(
         { user: buyerId, event: eventIdStr },
         { user: buyerId, event: eventIdStr },
-        { upsert: true, new: true }
+        { upsert: true, new: true },
       );
-      console.log(`✅ Upserted Booking record cho User ${buyerId} và Event ${eventIdStr}`);
+      console.log(
+        `✅ Upserted Booking record cho User ${buyerId} và Event ${eventIdStr}`,
+      );
     }
   } catch (popErr) {
     console.error("❌ Lỗi cập nhật popularity score hoặc Booking:", popErr);
@@ -938,8 +955,6 @@ const handleFinalizeOrder = async (req, res) => {
   }
 };
 
-
-
 /**
  * Tạo order khi người dùng muốn mua lại vé trên marketplace (hỗ trợ nhiều vé)
  * POST /api/payments/create-resale-order
@@ -954,7 +969,8 @@ async function handleCreateResaleOrder(req, res) {
     if (!walletAddress || !Array.isArray(tickets) || tickets.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Missing required fields: walletAddress, tickets (non-empty array)",
+        message:
+          "Missing required fields: walletAddress, tickets (non-empty array)",
       });
     }
 
@@ -1093,15 +1109,23 @@ async function handleFinalizeResaleOrder(req, res) {
     const { orderId, txHash, ticketIds } = req.body;
     const buyerId = req.user.id;
 
-    if (!orderId || !txHash || !Array.isArray(ticketIds) || ticketIds.length === 0) {
+    if (
+      !orderId ||
+      !txHash ||
+      !Array.isArray(ticketIds) ||
+      ticketIds.length === 0
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Missing required fields: orderId, txHash, ticketIds (non-empty array)",
+        message:
+          "Missing required fields: orderId, txHash, ticketIds (non-empty array)",
       });
     }
 
     if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({ success: false, message: "Invalid orderId" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid orderId" });
     }
 
     for (let i = 0; i < ticketIds.length; i++) {
@@ -1116,7 +1140,9 @@ async function handleFinalizeResaleOrder(req, res) {
     // --- Fetch order ---
     const order = await Order.findById(orderId);
     if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
     }
 
     if (order.buyer.toString() !== buyerId) {
@@ -1125,7 +1151,9 @@ async function handleFinalizeResaleOrder(req, res) {
 
     // Idempotency
     if (order.status === "paid" && order.txHash === txHash) {
-      return res.status(200).json({ success: true, message: "Order already processed" });
+      return res
+        .status(200)
+        .json({ success: true, message: "Order already processed" });
     }
 
     if (order.status !== "pending") {
@@ -1356,10 +1384,7 @@ async function handleFinalizeOrderWeb3(req, res) {
       // Nếu FE không gửi, fallback tự extract từ Transfer events on-chain.
       let tokenIds;
 
-      if (
-        Array.isArray(tokenIdsFromFE) &&
-        tokenIdsFromFE.length > 0
-      ) {
+      if (Array.isArray(tokenIdsFromFE) && tokenIdsFromFE.length > 0) {
         // Normalize: đảm bảo mọi id đều là string
         tokenIds = tokenIdsFromFE.map((id) => String(id));
         console.log(

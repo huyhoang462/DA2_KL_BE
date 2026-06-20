@@ -89,7 +89,7 @@ app.use(
       "http://localhost:5173",
       "http://127.0.0.1:5173",
       "https://shine-ticket.vercel.app",
-      process.env.FRONTEND_URL,
+      process.env.CLIENT_URL,
     ].filter(Boolean),
     credentials: true, // BẮT BUỘC để nhận Cookies/Token
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
