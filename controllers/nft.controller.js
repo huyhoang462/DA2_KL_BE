@@ -48,7 +48,7 @@ const getMetadata = async (req, res) => {
     const nftName = `${event?.name || "Event Ticket"} - #${tokenId}`;
 
     // 4. Link external (frontend) – tuỳ bạn chỉnh domain
-    const baseClientUrl = process.env.CLIENT_URL || "https://shineticket.com";
+    const baseClientUrl = process.env.CLIENT_URL || "http://localhost:5173";
 
     const externalUrl = event
       ? `${baseClientUrl}/events/${event._id.toString()}`
