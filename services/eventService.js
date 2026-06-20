@@ -522,11 +522,12 @@ const updateEvent = async (eventId, updateData) => {
       }
     });
 
-    // --- SINH LẠI EMBEDDING NẾU CÓ THAY ĐỔI ---
+    // --- SINH LẠI EMBEDDING NẾU CÓ THAY ĐỔI (CHỈ KHI EVENT ĐÃ PUBLIC) ---
     if (
-      updateData.name !== undefined ||
-      updateData.description !== undefined ||
-      updateData.category !== undefined
+      (existingEvent.status === "upcoming" || existingEvent.status === "ongoing") &&
+      (updateData.name !== undefined ||
+        updateData.description !== undefined ||
+        updateData.category !== undefined)
     ) {
       const newName =
         updateData.name !== undefined ? updateData.name : existingEvent.name;
@@ -551,6 +552,7 @@ const updateEvent = async (eventId, updateData) => {
         eventFieldsToUpdate.embedding = embedding;
       }
     }
+
 
     if (
       updateData.status !== undefined &&
@@ -990,10 +992,6 @@ const createEvent = async (data, creatorId) => {
   try {
     session.startTransaction();
 
-    // --- SINH EMBEDDING ---
-    const textToEmbed = `${name} ${category.name} ${description}`.trim();
-    const embedding = await generateEmbedding(textToEmbed);
-
     const newEvent = new Event({
       name,
       description,
@@ -1006,7 +1004,6 @@ const createEvent = async (data, creatorId) => {
       creator: creator._id,
       category: category._id,
       status: status || "pending",
-      embedding: embedding,
     });
     const savedEvent = await newEvent.save({ session });
 
@@ -1407,6 +1404,27 @@ const finalizeEventMinting = async (
 
   const oldStatus = event.status;
   event.status = isSuccess ? "upcoming" : "approved";
+
+  if (isSuccess) {
+    try {
+      // TẠO EMBEDDING KHI MINT THÀNH CÔNG
+      let categoryName = "";
+      if (event.category) {
+        const Category = require("../models/category");
+        const cat = await Category.findById(event.category);
+        if (cat) categoryName = cat.name;
+      }
+      const textToEmbed = `${event.name} ${categoryName} ${event.description || ""}`.trim();
+      const embedding = await generateEmbedding(textToEmbed);
+      if (embedding && embedding.length > 0) {
+        event.embedding = embedding;
+      }
+    } catch (err) {
+      console.error("Error generating embedding during minting:", err);
+      // Không ném lỗi ra ngoài để tránh block quá trình mint
+    }
+  }
+
   await event.save();
 
   if (event.creator?._id) {
