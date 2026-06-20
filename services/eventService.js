@@ -1171,6 +1171,7 @@ const getEventsByUserId = async (userId) => {
       checkinGasPerTicket: voucher.checkinGasPerTicket,
       expiryTime: voucher.expiryTime,
       nonce: voucher.nonce,
+      organizer: voucher.organizer,
     })),
     signatures: event.signatures || [],
   }));
