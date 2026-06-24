@@ -204,6 +204,56 @@ const getPendingEvents = async (page = 1, limit = 10) => {
   return formatPaginatedResponse(results, page, limit);
 };
 
+const getUpcomingEventsByUserId = async (userId) => {
+  const aggregationPipeline = [
+    {
+      $match: {
+        creator: new mongoose.Types.ObjectId(userId),
+        status: "upcoming",
+      },
+    },
+    {
+      $lookup: {
+        from: "users",
+        localField: "creator",
+        foreignField: "_id",
+        as: "creator",
+      },
+    },
+
+    {
+      $unwind: {
+        path: "$creator",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    {
+      $sort: { createdAt: -1 },
+    },
+
+    {
+      $project: {
+        _id: 0,
+        id: { $toString: "$_id" },
+        bannerImageUrl: 1,
+        name: 1,
+        location: 1,
+        startDate: 1,
+        createdAt: 1,
+        creator: {
+          id: { $toString: "$creator._id" },
+          name: "$creator.fullName",
+        },
+      },
+    },
+  ];
+
+  const results = await Event.aggregate(aggregationPipeline);
+
+  return results;
+};
+
 const getAllEvents = async () => {
   const aggregationPipeline = [
     // --- STAGE 1: $match (Filter by status) ---
@@ -524,7 +574,8 @@ const updateEvent = async (eventId, updateData) => {
 
     // --- SINH LẠI EMBEDDING NẾU CÓ THAY ĐỔI (CHỈ KHI EVENT ĐÃ PUBLIC) ---
     if (
-      (existingEvent.status === "upcoming" || existingEvent.status === "ongoing") &&
+      (existingEvent.status === "upcoming" ||
+        existingEvent.status === "ongoing") &&
       (updateData.name !== undefined ||
         updateData.description !== undefined ||
         updateData.category !== undefined)
@@ -552,7 +603,6 @@ const updateEvent = async (eventId, updateData) => {
         eventFieldsToUpdate.embedding = embedding;
       }
     }
-
 
     if (
       updateData.status !== undefined &&
@@ -1414,7 +1464,8 @@ const finalizeEventMinting = async (
         const cat = await Category.findById(event.category);
         if (cat) categoryName = cat.name;
       }
-      const textToEmbed = `${event.name} ${categoryName} ${event.description || ""}`.trim();
+      const textToEmbed =
+        `${event.name} ${categoryName} ${event.description || ""}`.trim();
       const embedding = await generateEmbedding(textToEmbed);
       if (embedding && embedding.length > 0) {
         event.embedding = embedding;
@@ -2468,6 +2519,7 @@ module.exports = {
   getPendingEvents,
   getEventById,
   getEventsByUserId,
+  getUpcomingEventsByUserId,
   createEvent,
   updateEvent,
   updateEventStatus,

@@ -7,6 +7,7 @@ const { checkEventOwnership } = require("../middlewares/authorization");
 router.post("/cleanup", eventController.handleCleanupData);
 router.get("/", eventController.handleGetAllEvents);
 router.get("/pending", eventController.handleGetPendingEvents);
+router.get("/upcoming/:id", eventController.handleGetUpcomingEventsByUserId);
 
 // Dashboard routes - Đặt trước /:id để tránh conflict
 router.get(

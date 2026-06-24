@@ -1,4 +1,4 @@
- const {
+const {
   getAllEvents,
   createEvent,
   getEventById,
@@ -6,6 +6,7 @@
   cleanupOrphanedData,
   getEventsByUserId,
   getPendingEvents,
+  getUpcomingEventsByUserId,
   updateEventStatus,
   updateEvent,
   startEventMinting,
@@ -33,6 +34,16 @@ const handleGetPendingEvents = async (req, res, next) => {
   }
 };
 
+const handleGetEventsByUserId = async (req, res, next) => {
+  try {
+    const { id: userId } = req.params;
+    const result = await getEventsByUserId(userId);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const handleGetAllEvents = async (req, res, next) => {
   try {
     const result = await getAllEvents();
@@ -52,10 +63,10 @@ const handleGetEventById = async (req, res, next) => {
   }
 };
 
-const handleGetEventsByUserId = async (req, res, next) => {
+const handleGetUpcomingEventsByUserId = async (req, res, next) => {
   try {
     const userId = req.params.id;
-    const result = await getEventsByUserId(userId);
+    const result = await getUpcomingEventsByUserId(userId);
     res.status(200).json(result);
   } catch (error) {
     next(error);
@@ -253,7 +264,8 @@ module.exports = {
   handleGetAllEvents,
   handleGetPendingEvents,
   handleGetEventById,
-  handleGetEventsByUserId,
+  handleGetEventsByUserId,  
+  handleGetUpcomingEventsByUserId,
   handleCreateEvent,
   handleUpdateEvent,
   handleUpdateEventStatus,
