@@ -42,8 +42,8 @@ const getDashboardOverview = async () => {
       todayTicketsSold,
     ] = await Promise.all([
       // Người dùng
-      User.countDocuments({ role: "user" }),
-      User.countDocuments({ role: { $in: ["staff", "admin"] } }),
+      User.countDocuments({ role: { $in: ["user", "customer", "organizer"] } }),
+      User.countDocuments({ role: { $in: ["admin"] } }),
 
       // Sự kiện
       Event.countDocuments(),
@@ -249,23 +249,23 @@ const getDashboardOverview = async () => {
     }
 
     // 6.3. Sự kiện sắp diễn ra trong 3 ngày
-    const threeDaysLater = new Date();
-    threeDaysLater.setDate(threeDaysLater.getDate() + 3);
+    // const threeDaysLater = new Date();
+    // threeDaysLater.setDate(threeDaysLater.getDate() + 3);
 
-    const upcomingSoonEvents = await Event.countDocuments({
-      status: "upcoming",
-      startDate: { $lte: threeDaysLater, $gte: new Date() },
-    });
+    // const upcomingSoonEvents = await Event.countDocuments({
+    //   status: "upcoming",
+    //   startDate: { $lte: threeDaysLater, $gte: new Date() },
+    // });
 
-    if (upcomingSoonEvents > 0) {
-      alerts.push({
-        type: "info",
-        priority: "low",
-        message: `${upcomingSoonEvents} sự kiện sắp diễn ra trong 3 ngày`,
-        action: "Xem sự kiện sắp diễn ra",
-        link: "/admin/events",
-      });
-    }
+    // if (upcomingSoonEvents > 0) {
+    //   alerts.push({
+    //     type: "info",
+    //     priority: "low",
+    //     message: `${upcomingSoonEvents} sự kiện sắp diễn ra trong 3 ngày`,
+    //     action: "Xem sự kiện sắp diễn ra",
+    //     link: "/admin/events",
+    //   });
+    // }
 
     // 7. TOP EVENTS (Sự kiện bán chạy)
     const topSellingEvents = await Event.aggregate([

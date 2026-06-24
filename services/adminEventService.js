@@ -381,7 +381,9 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
         const nonce = Math.floor(Math.random() * 1000000000);
 
         if (!event.creator || !event.creator.walletAddress) {
-          throw new Error("Người tạo sự kiện chưa liên kết địa chỉ ví Web3 (walletAddress). Vui lòng yêu cầu nhà tổ chức cập nhật ví trước khi duyệt.");
+          throw new Error(
+            "Người tạo sự kiện chưa liên kết địa chỉ ví Web3 (walletAddress). Vui lòng yêu cầu nhà tổ chức cập nhật ví trước khi duyệt.",
+          );
         }
 
         const voucherData = {
@@ -443,18 +445,18 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
     if (event.creator?._id) {
       if (newStatus === "approved") {
         // Gửi email thông báo khi event được duyệt
-        try {
-          await sendEventApprovedEmail(
-            event.creator.email,
-            event.creator.fullName,
-            event.name,
-          );
-        } catch (emailError) {
-          console.error(
-            "[ADMIN EVENT] Error sending approval email:",
-            emailError,
-          );
-        }
+        // try {
+        //   await sendEventApprovedEmail(
+        //     event.creator.email,
+        //     event.creator.fullName,
+        //     event.name,
+        //   );
+        // } catch (emailError) {
+        //   console.error(
+        //     "[ADMIN EVENT] Error sending approval email:",
+        //     emailError,
+        //   );
+        // }
 
         await createNotificationSafe({
           recipientId: event.creator._id,
@@ -474,19 +476,19 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
       }
 
       if (newStatus === "rejected") {
-        try {
-          await sendEventRejectionEmail(
-            event.creator.email,
-            event.creator.fullName,
-            event.name,
-            event.rejectionReason,
-          );
-        } catch (emailError) {
-          console.error(
-            "[ADMIN EVENT] Error sending rejection email:",
-            emailError,
-          );
-        }
+        // try {
+        //   await sendEventRejectionEmail(
+        //     event.creator.email,
+        //     event.creator.fullName,
+        //     event.name,
+        //     event.rejectionReason,
+        //   );
+        // } catch (emailError) {
+        //   console.error(
+        //     "[ADMIN EVENT] Error sending rejection email:",
+        //     emailError,
+        //   );
+        // }
 
         await createNotificationSafe({
           recipientId: event.creator._id,
@@ -506,19 +508,19 @@ const updateEventStatus = async (eventId, newStatus, reason, adminId) => {
       }
 
       if (newStatus === "cancelled") {
-        try {
-          await sendEventCancelledEmail(
-            event.creator.email,
-            event.creator.fullName,
-            event.name,
-            event.cancelReason || "Event has been cancelled by admin",
-          );
-        } catch (emailError) {
-          console.error(
-            "[ADMIN EVENT] Error sending cancellation email:",
-            emailError,
-          );
-        }
+        // try {
+        //   await sendEventCancelledEmail(
+        //     event.creator.email,
+        //     event.creator.fullName,
+        //     event.name,
+        //     event.cancelReason || "Event has been cancelled by admin",
+        //   );
+        // } catch (emailError) {
+        //   console.error(
+        //     "[ADMIN EVENT] Error sending cancellation email:",
+        //     emailError,
+        //   );
+        // }
 
         await createNotificationSafe({
           recipientId: event.creator._id,

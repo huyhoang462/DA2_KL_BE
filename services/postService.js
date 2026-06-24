@@ -65,7 +65,10 @@ const getAllPosts = async ({
     Post.find(query)
       .select("-relatedTickets._id") // Không trả về _id của subdocument relatedTickets (walletAddress tự động được trả về)
       .populate("author", "fullName email role")
-      .populate("relatedEvent", "name startDate bannerImageUrl status location")
+      .populate(
+        "relatedEvent",
+        "name startDate bannerImageUrl status location format",
+      )
       .populate({
         path: "relatedTickets.ticket",
         select: "status owner ticketType tokenId",
