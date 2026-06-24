@@ -239,6 +239,35 @@ const addGasFundJob = async (payload) => {
   }
 };
 
+// Handle Graceful Shutdown
+async function gracefulShutdown() {
+  console.log("Đang đóng các Queue và Redis Connection...");
+  try {
+    await mintQueue.close();
+    await checkInQueue.close();
+    await expireQueue.close();
+    await relayerBuyQueue.close();
+    await gasFundQueue.close();
+    await sharedRedisConnection.quit();
+    console.log("Đã ngắt kết nối Redis an toàn.");
+  } catch (error) {
+    console.error("Lỗi khi đóng Redis connection:", error);
+  }
+}
+
+process.on("SIGINT", async () => {
+  await gracefulShutdown();
+  process.exit(0);
+});
+process.on("SIGTERM", async () => {
+  await gracefulShutdown();
+  process.exit(0);
+});
+process.on("SIGUSR2", async () => {
+  await gracefulShutdown();
+  process.exit(0);
+});
+
 module.exports = {
   addMintJob,
   addCheckInJob,
