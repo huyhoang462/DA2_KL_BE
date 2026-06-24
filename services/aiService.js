@@ -4,7 +4,7 @@ const dotenv = require("dotenv");
 dotenv.config();
 
 // Mặc định port 8000 của FastAPI nếu không có trong env
-const AI_SERVICE_URL = process.env.AI_SERVICE_URL || "http://0.0.0.0:8000 ";
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL?.trim() || "http://localhost:8000";
 
 const generateEmbedding = async (text) => {
   try {
