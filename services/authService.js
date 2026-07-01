@@ -17,7 +17,7 @@ const loadPrivyPrivateKey = () => {
     if (process.env.PRIVY_PRIVATE_KEY_BASE64) {
       const pem = Buffer.from(
         process.env.PRIVY_PRIVATE_KEY_BASE64,
-        "base64"
+        "base64",
       ).toString("utf8");
       return pem;
     }
@@ -31,7 +31,7 @@ const loadPrivyPrivateKey = () => {
     }
 
     console.error(
-      "[PRIVY] Không tìm thấy private key. Thiết lập PRIVY_PRIVATE_KEY_BASE64 hoặc PRIVY_PRIVATE_KEY_PATH."
+      "[PRIVY] Không tìm thấy private key. Thiết lập PRIVY_PRIVATE_KEY_BASE64 hoặc PRIVY_PRIVATE_KEY_PATH.",
     );
     return null;
   } catch (err) {
@@ -58,13 +58,13 @@ const generatePrivyAuthToken = (userId, email) => {
   // Theo Dashboard hiện tại: chỉ bắt buộc aud. iss là tùy chọn.
   if (!PRIVY_APP_ID || !PRIVY_JWT_AUD || !privateKey) {
     console.error(
-      "[PRIVY] Thiếu cấu hình PRIVY_APP_ID / PRIVY_JWT_AUD hoặc privateKey. Không tạo được privyToken."
+      "[PRIVY] Thiếu cấu hình PRIVY_APP_ID / PRIVY_JWT_AUD hoặc privateKey. Không tạo được privyToken.",
     );
     return null;
   }
 
   const nowInSeconds = Math.floor(Date.now() / 1000);
-  const expiresInSeconds = 60 * 60; // 1 giờ
+  const expiresInSeconds = 60 * 60 * 24; // 1 ngày
 
   const payload = {
     sub: userId.toString(),
@@ -124,7 +124,7 @@ const login = async ({ email, password }) => {
     process.env.ACCESS_TOKEN_SECRET,
     {
       expiresIn: "2d",
-    }
+    },
   );
 
   const refreshTokenPayload = {
@@ -135,7 +135,7 @@ const login = async ({ email, password }) => {
     process.env.REFRESH_TOKEN_SECRET,
     {
       expiresIn: "7d",
-    }
+    },
   );
   // [PRIVY UPDATE] 2. Tạo Privy Token khi đăng nhập thành công
   // Khi frontend nhận token này, nó sẽ tự động mở lại ví cũ của user này
@@ -193,7 +193,7 @@ const refreshToken = async (token) => {
       process.env.ACCESS_TOKEN_SECRET,
       {
         expiresIn: "2d", // Giống với login để consistent
-      }
+      },
     );
 
     // Trả về Access Token mới + user info (để FE update Redux state)
@@ -294,7 +294,7 @@ const verifyEmail = async ({ email, otp }) => {
 
   if (!verificationRecord) {
     const error = new Error(
-      "Verification record not found. Please try registering again."
+      "Verification record not found. Please try registering again.",
     );
     error.status = 404;
     throw error;
