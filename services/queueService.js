@@ -4,9 +4,9 @@ const IORedis = require("ioredis");
 // Dùng 1 IORedis instance duy nhất cho toàn bộ BE
 // BullMQ sẽ tái sử dụng connection này thay vì tạo mới cho mỗi Queue
 const sharedRedisConnection = new IORedis({
-  host: process.env.REDIS_HOST,
-  port: parseInt(process.env.REDIS_PORT),
-  password: process.env.REDIS_PASSWORD,
+  host: process.env.REDIS_HOST?.trim(),
+  port: parseInt(process.env.REDIS_PORT?.trim()),
+  password: process.env.REDIS_PASSWORD?.trim(),
   maxRetriesPerRequest: null, // Bắt buộc cho BullMQ
   retryStrategy: function (times) {
     if (times > 10) return null;
@@ -238,6 +238,35 @@ const addGasFundJob = async (payload) => {
     throw error;
   }
 };
+
+// Handle Graceful Shutdown
+async function gracefulShutdown() {
+  console.log("Đang đóng các Queue và Redis Connection...");
+  try {
+    await mintQueue.close();
+    await checkInQueue.close();
+    await expireQueue.close();
+    await relayerBuyQueue.close();
+    await gasFundQueue.close();
+    await sharedRedisConnection.quit();
+    console.log("Đã ngắt kết nối Redis an toàn.");
+  } catch (error) {
+    console.error("Lỗi khi đóng Redis connection:", error);
+  }
+}
+
+process.on("SIGINT", async () => {
+  await gracefulShutdown();
+  process.exit(0);
+});
+process.on("SIGTERM", async () => {
+  await gracefulShutdown();
+  process.exit(0);
+});
+process.on("SIGUSR2", async () => {
+  await gracefulShutdown();
+  process.exit(0);
+});
 
 module.exports = {
   addMintJob,

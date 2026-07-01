@@ -67,7 +67,7 @@ const getRecommendations = async (req, res, next) => {
     // 2. Truy vấn các Event hợp lệ (đang mở bán)
     // Loại trừ các sự kiện user đã mua để recommend sự kiện mới
     const query = {
-      status: { $in: ["approved", "upcoming", "ongoing"] },
+      status: { $in: ["upcoming", "ongoing"] },
     };
     if (userPurchasedEventIds.length > 0) {
       query._id = { $nin: userPurchasedEventIds };
@@ -118,7 +118,7 @@ const getRecommendations = async (req, res, next) => {
       const excludeIds = [...userPurchasedEventIds, ...top10Ids];
       
       const newQuery = {
-        status: { $in: ["approved", "upcoming", "ongoing"] },
+        status: { $in: ["upcoming", "ongoing"] },
         _id: { $nin: excludeIds }
       };
       
@@ -146,6 +146,28 @@ const getRecommendations = async (req, res, next) => {
       
       top10 = [...top10, ...formattedExtra];
     }
+
+    // 6. Lấy giá vé thấp nhất (lowestPrice) cho các sự kiện
+    const eventIds = top10.map(e => e.id);
+    const shows = await Show.find({ event: { $in: eventIds } }).select('_id event').lean();
+    const showIds = shows.map(s => s._id);
+    const tickets = await TicketType.find({ show: { $in: showIds } }).select('show price').lean();
+
+    const minPriceByEvent = {};
+    for (const eventId of eventIds) {
+      const eventShowIds = shows.filter(s => s.event.toString() === eventId).map(s => s._id.toString());
+      const eventTickets = tickets.filter(t => eventShowIds.includes(t.show.toString()));
+      if (eventTickets.length > 0) {
+        minPriceByEvent[eventId] = Math.min(...eventTickets.map(t => t.price));
+      } else {
+        minPriceByEvent[eventId] = 0;
+      }
+    }
+
+    top10 = top10.map(e => ({
+      ...e,
+      lowestPrice: minPriceByEvent[e.id] || 0
+    }));
 
     res.status(200).json(top10);
   } catch (error) {
