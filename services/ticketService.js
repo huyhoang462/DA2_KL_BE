@@ -115,7 +115,7 @@ const getTicketsByUserId = async (userId) => {
       path: "order",
       select: "totalAmount status createdAt",
     })
-    .sort({ createdAt: -1 })
+    .sort({ updatedAt: -1 })
     .lean();
 
   return tickets.map((ticket) => {
