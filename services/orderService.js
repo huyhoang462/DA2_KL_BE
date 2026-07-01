@@ -139,7 +139,7 @@ const createOrder = async (orderData, buyerId, retryCount = 0) => {
     const pendingOrders = await Order.find({
       buyer: buyerId,
       status: "pending",
-      expiresAt: { $lt: new Date()},
+      expiresAt: { $lt: new Date() },
     });
 
     if (pendingOrders.length > 0) {
@@ -926,7 +926,9 @@ const getOrdersByEventId = async (eventId, queryParams = {}) => {
 
     const summary = {
       total: allOrdersForSummary.length,
-      paid: allOrdersForSummary.filter((o) => o.status === "paid").length,
+      paid: allOrdersForSummary.filter(
+        (o) => o.status === "paid" || o.status === "completed",
+      ).length,
       pending: allOrdersForSummary.filter((o) => o.status === "pending").length,
       cancelled: allOrdersForSummary.filter((o) => o.status === "cancelled")
         .length,

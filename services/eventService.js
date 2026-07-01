@@ -1566,11 +1566,16 @@ const getDashboardOverview = async (eventId) => {
 
     // Filter orders: chỉ lấy paid và pending
     const orders = allOrders.filter(
-      (order) => order.status === "paid" || order.status === "pending",
+      (order) =>
+        order.status === "paid" ||
+        order.status === "pending" ||
+        order.status === "completed",
     );
 
     // 5. Tính toán metrics
-    const paidOrders = orders.filter((order) => order.status === "paid");
+    const paidOrders = orders.filter(
+      (order) => order.status === "paid" || order.status === "completed",
+    );
     const pendingOrders = orders.filter((order) => order.status === "pending");
 
     const totalRevenue = paidOrders.reduce(
@@ -1766,7 +1771,7 @@ const getRevenueAnalytics = async (
 
     const matchFilter = {
       _id: { $in: orderIds.map((id) => new mongoose.Types.ObjectId(id)) },
-      status: "paid",
+      status: { $in: ["paid", "completed"] },
     };
 
     if (Object.keys(dateFilter).length > 0) {
