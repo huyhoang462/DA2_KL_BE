@@ -67,7 +67,7 @@ const getRecommendations = async (req, res, next) => {
     // 2. Truy vấn các Event hợp lệ (đang mở bán)
     // Loại trừ các sự kiện user đã mua để recommend sự kiện mới
     const query = {
-      status: { $in: ["approved", "upcoming", "ongoing"] },
+      status: { $in: ["upcoming", "ongoing"] },
     };
     if (userPurchasedEventIds.length > 0) {
       query._id = { $nin: userPurchasedEventIds };
@@ -118,7 +118,7 @@ const getRecommendations = async (req, res, next) => {
       const excludeIds = [...userPurchasedEventIds, ...top10Ids];
       
       const newQuery = {
-        status: { $in: ["approved", "upcoming", "ongoing"] },
+        status: { $in: ["upcoming", "ongoing"] },
         _id: { $nin: excludeIds }
       };
       
