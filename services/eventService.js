@@ -2284,7 +2284,7 @@ const getTrendingEvents = async (limit = 12) => {
     {
       $match: {
         status: { $in: ["upcoming", "ongoing"] },
-        createdAt: { $gte: sevenDaysAgo },
+        // createdAt: { $gte: sevenDaysAgo },
       },
     },
     {
